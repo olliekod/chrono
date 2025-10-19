@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrono Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            opacity: 0.8;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            font-size: 14px;
+        }
+
+        input[type="text"]::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        select option {
+            background: #764ba2;
+            color: white;
+        }
+
+        .hotkey-item {
+            display: grid;
+            grid-template-columns: 1fr 150px 100px;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .key-input {
+            display: flex;
+            gap: 8px;
+        }
+
+        .modifier-chip {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-right: 4px;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+
+        .modifier-chip.active {
+            background: rgba(145, 71, 255, 0.8);
+            border-color: rgba(145, 71, 255, 1);
+        }
+
+        .modifiers-group {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            border-radius: 10px;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00c853 0%, #00e676 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 200, 83, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .info-text {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ Settings</h1>
+        <p class="subtitle">Customize your recording preferences</p>
+
+        <!-- User Settings - MOVED TO TOP -->
+        <div class="section">
+            <h2>👤 User</h2>
+            
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="username" placeholder="Your display name">
+                <div class="info-text">Displayed on clips and uploads</div>
+            </div>
+        </div>
+
+        <!-- Recording Settings -->
+        <div class="section">
+            <h2>🎬 Recording</h2>
+            
+            <div class="form-group">
+                <label>Resolution</label>
+                <select id="resolution">
+                    <option value="1920x1080">1920x1080 (Full HD)</option>
+                    <option value="2560x1440">2560x1440 (2K)</option>
+                    <option value="3840x2160">3840x2160 (4K)</option>
+                    <option value="1280x720">1280x720 (HD)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Frame Rate (FPS)</label>
+                <select id="fps">
+                    <option value="30">30 FPS</option>
+                    <option value="60">60 FPS</option>
+                    <option value="120">120 FPS</option>
+                    <option value="144">144 FPS</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Bitrate (kbps)</label>
+                <input type="number" id="bitrate" min="2000" max="50000" step="1000">
+                <div class="info-text">Higher = better quality, larger files. Recommended: 8000</div>
+            </div>
+
+            <div class="form-group">
+                <label>Encoder</label>
+                <select id="encoder">
+                    <option value="h264_nvenc">NVIDIA NVENC (RTX/GTX)</option>
+                    <option value="h264_amf">AMD AMF (Radeon)</option>
+                    <option value="h264_qsv">Intel QuickSync</option>
+                    <option value="libx264">Software (CPU)</option>
+                </select>
+                <div class="info-text">Auto-detected: <span id="detected-encoder"></span></div>
+            </div>
+
+            <div class="form-group">
+                <label>Buffer Duration (seconds)</label>
+                <input type="number" id="buffer" min="60" max="600" step="30">
+                <div class="info-text">How much recording to keep in memory. Max clip length.</div>
+            </div>
+        </div>
+
+        <!-- Hotkeys -->
+        <div class="section">
+            <h2>⌨️ Hotkeys</h2>
+            
+            <div id="hotkeys-container"></div>
+        </div>
+
+        <div class="buttons">
+            <button class="btn-secondary" onclick="cancel()">Cancel</button>
+            <button class="btn-primary" onclick="save()">💾 Save Settings</button>
+        </div>
+    </div>
+
+    <script>
+        let config = {};
+
+        // Load config on start
+        window.addEventListener('DOMContentLoaded', () => {
+            sendMessage('loadConfig');
+        });
+
+        function sendMessage(action, data = {}) {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({ action, ...data });
+            } else {
+                console.log('Message:', action, data);
+            }
+        }
+
+        // Receive config from C#
+        if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+                const data = event.data;
+                
+                if (data.action === 'configLoaded') {
+                    config = data.config;
+                    populateForm();
+                }
+
+                if (data.action === 'configSaved') {
+                    alert('Settings saved successfully!');
+                    window.close();
+                }
+            });
+        }
+
+        function populateForm() {
+            // User settings - FIRST
+            document.getElementById('username').value = config.Username || '';
+
+            // Recording settings
+            document.getElementById('resolution').value = config.Resolution || '1920x1080';
+            document.getElementById('fps').value = config.Fps || 60;
+            document.getElementById('bitrate').value = config.Bitrate || 8000;
+            document.getElementById('encoder').value = config.Encoder || 'h264_nvenc';
+            document.getElementById('buffer').value = config.BufferDurationSeconds || 300;
+            document.getElementById('detected-encoder').textContent = config.Encoder || 'Unknown';
+
+            // Hotkeys
+            renderHotkeys();
+        }
+
+        function renderHotkeys() {
+            const container = document.getElementById('hotkeys-container');
+            container.innerHTML = '';
+
+            config.Hotkeys.forEach((hotkey, index) => {
+                const div = document.createElement('div');
+                div.className = 'form-group';
+                div.innerHTML = `
+                    <label>${hotkey.Name}</label>
+                    <div class="modifiers-group">
+                        <span class="modifier-chip ${hotkey.Modifiers.includes('Control') ? 'active' : ''}" 
+                              onclick="toggleModifier(${index}, 'Control')">Ctrl</span>
+                        <span class="modifier-chip ${hotkey.Modifiers.includes('Alt') ? 'active' : ''}" 
+                              onclick="toggleModifier(${index}, 'Alt')">Alt</span>
+                        <span class="modifier-chip ${hotkey.Modifiers.includes('Shift') ? 'active' : ''}" 
+                              onclick="toggleModifier(${index}, 'Shift')">Shift</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <input type="text" id="hotkey-key-${index}" value="${hotkey.Key}" 
+                               placeholder="Press a key..." onkeydown="captureKey(event, ${index})">
+                        <input type="number" id="hotkey-length-${index}" value="${hotkey.ClipLengthSeconds}" 
+                               min="5" max="300" placeholder="Seconds">
+                        <span style="font-size: 13px; opacity: 0.8;">seconds</span>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function toggleModifier(index, modifier) {
+            const mods = config.Hotkeys[index].Modifiers;
+            const idx = mods.indexOf(modifier);
+            
+            if (idx > -1) {
+                mods.splice(idx, 1);
+            } else {
+                mods.push(modifier);
+            }
+            
+            renderHotkeys();
+        }
+
+        function captureKey(event, index) {
+            event.preventDefault();
+            
+            let key = event.key;
+            
+            // Convert key names
+            if (key === ' ') key = 'Space';
+            if (key === 'Enter') key = 'Enter';
+            if (key.startsWith('F') && key.length <= 3) key = key; // F1-F12
+            if (key.length === 1) key = key.toUpperCase();
+            
+            // Special keys
+            const specialKeys = {
+                'PageUp': 'PageUp',
+                'PageDown': 'PageDown',
+                'Home': 'Home',
+                'End': 'End',
+                'Insert': 'Insert',
+                'Delete': 'Delete'
+            };
+            
+            if (specialKeys[key]) key = specialKeys[key];
+            
+            config.Hotkeys[index].Key = key;
+            document.getElementById(`hotkey-key-${index}`).value = key;
+        }
+
+        function save() {
+            // Gather form data
+            config.Username = document.getElementById('username').value;
+            config.Resolution = document.getElementById('resolution').value;
+            config.Fps = parseInt(document.getElementById('fps').value);
+            config.Bitrate = parseInt(document.getElementById('bitrate').value);
+            config.Encoder = document.getElementById('encoder').value;
+            config.BufferDurationSeconds = parseInt(document.getElementById('buffer').value);
+
+            // Update hotkey lengths
+            config.Hotkeys.forEach((hotkey, index) => {
+                hotkey.ClipLengthSeconds = parseInt(document.getElementById(`hotkey-length-${index}`).value);
+            });
+
+            // Send to C#
+            sendMessage('saveConfig', { config });
+        }
+
+        function cancel() {
+            window.close();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrono</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #1a1a1d;
+            color: #e8e6e3;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 550px;
+            background: linear-gradient(135deg, #2b2d42 0%, #1a1a1d 100%);
+            border: 3px solid #c9842a;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 0 40px rgba(201, 132, 42, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #c9842a, #d4a053, #c9842a);
+            animation: scanline 3s linear infinite;
+        }
+
+        @keyframes scanline {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        h1 {
+            font-size: 42px;
+            font-weight: 900;
+            text-align: center;
+            margin-bottom: 8px;
+            color: #d4a053;
+            text-shadow: 0 0 20px rgba(201, 132, 42, 0.6);
+            letter-spacing: 4px;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 11px;
+            color: #8d99ae;
+            margin-bottom: 25px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .status-panel {
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid #4a4e69;
+            border-radius: 6px;
+            padding: 18px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .status-main {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            letter-spacing: 1px;
+        }
+
+        .status-main.recording {
+            color: #ef233c;
+            text-shadow: 0 0 10px rgba(239, 35, 60, 0.6);
+        }
+
+        .status-main.idle {
+            color: #d4a053;
+        }
+
+        .status-main.stopped {
+            color: #6c757d;
+        }
+
+        .recording-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ef233c;
+            margin-right: 8px;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(239, 35, 60, 0.8); }
+            50% { opacity: 0.4; box-shadow: 0 0 4px rgba(239, 35, 60, 0.4); }
+        }
+
+        .status-detail {
+            font-size: 12px;
+            color: #8d99ae;
+            letter-spacing: 1px;
+        }
+
+        .mode-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .mode-btn {
+            background: rgba(74, 78, 105, 0.3);
+            border: 2px solid #4a4e69;
+            color: #e8e6e3;
+            padding: 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .mode-btn:hover {
+            background: rgba(74, 78, 105, 0.5);
+            border-color: #8d99ae;
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #c9842a, #d4a053);
+            border-color: #d4a053;
+            color: #1a1a1d;
+            box-shadow: 0 0 15px rgba(201, 132, 42, 0.5);
+        }
+
+        .app-selector {
+            margin-bottom: 20px;
+        }
+
+        .app-selector label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 11px;
+            color: #8d99ae;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .app-selector select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid #4a4e69;
+            border-radius: 6px;
+            color: #e8e6e3;
+            font-size: 13px;
+            cursor: pointer;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .app-selector select:focus {
+            outline: none;
+            border-color: #d4a053;
+        }
+
+        .app-selector select option {
+            background: #2b2d42;
+            color: #e8e6e3;
+        }
+
+        .start-btn {
+            width: 100%;
+            padding: 18px;
+            border-radius: 6px;
+            border: none;
+            font-size: 16px;
+            font-weight: 900;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .start-btn.start {
+            background: linear-gradient(135deg, #2a9d8f, #219e8a);
+            color: white;
+            border: 2px solid #2a9d8f;
+            box-shadow: 0 4px 20px rgba(42, 157, 143, 0.4);
+        }
+
+        .start-btn.start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(42, 157, 143, 0.6);
+        }
+
+        .start-btn.stop {
+            background: linear-gradient(135deg, #ef233c, #d90429);
+            color: white;
+            border: 2px solid #ef233c;
+            box-shadow: 0 4px 20px rgba(239, 35, 60, 0.4);
+        }
+
+        .start-btn.stop:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(239, 35, 60, 0.6);
+        }
+
+        .start-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .section {
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid #4a4e69;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .section h3 {
+            font-size: 12px;
+            margin-bottom: 12px;
+            color: #d4a053;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .hotkey-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 12px;
+            align-items: center;
+        }
+
+        .hotkey-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .hotkey-key {
+            background: rgba(201, 132, 42, 0.2);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            border: 1px solid #c9842a;
+            color: #d4a053;
+            font-weight: 700;
+        }
+
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+
+        .action-btn {
+            background: rgba(74, 78, 105, 0.3);
+            border: 2px solid #4a4e69;
+            color: #e8e6e3;
+            padding: 12px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .action-btn:hover {
+            background: rgba(201, 132, 42, 0.3);
+            border-color: #c9842a;
+            box-shadow: 0 0 10px rgba(201, 132, 42, 0.3);
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CHRONO</h1>
+        <p class="subtitle">Tactical Recording System</p>
+
+        <div class="status-panel">
+            <div class="status-main stopped" id="status">
+                ⏸ STANDBY
+            </div>
+            <div class="status-detail" id="status-detail">
+                Select mode to begin
+            </div>
+        </div>
+
+        <div class="mode-selector">
+            <button class="mode-btn active" data-mode="Application" onclick="selectMode('Application')">
+                🎮 Application
+            </button>
+            <button class="mode-btn" data-mode="Display" onclick="selectMode('Display')">
+                🖥 Display
+            </button>
+        </div>
+
+        <div class="app-selector" id="app-selector">
+            <label for="app-select">Target Application</label>
+            <select id="app-select" onchange="onAppSelected()">
+                <option value="">-- Select Target --</option>
+            </select>
+        </div>
+
+        <button class="start-btn start" id="start-btn" onclick="toggleRecording()">
+            ▶ ENGAGE RECORDING
+        </button>
+
+        <div class="section">
+            <h3>⌨ Active Hotkeys</h3>
+            <div id="hotkey-list">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="action-btn" onclick="openSettings()">⚙ Config</button>
+            <button class="action-btn" onclick="openClipsFolder()">📁 Clips</button>
+            <button class="action-btn" onclick="openLibrary()">📚 Library</button>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'Application';
+        let selectedApp = '';
+        let isRecording = false;
+        let availableApps = [];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('Chrono initialized');
+            sendMessage('getRunningApps');
+            sendMessage('getConfig');
+        });
+
+        function sendMessage(action, data = {}) {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({ action, ...data });
+            } else {
+                console.log('Message:', action, data);
+            }
+        }
+
+        function selectMode(mode) {
+            currentMode = mode;
+            
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+
+            const appSelector = document.getElementById('app-selector');
+            
+            if (mode === 'Display') {
+                appSelector.classList.add('hidden');
+                selectedApp = '';
+            } else {
+                appSelector.classList.remove('hidden');
+                document.getElementById('app-select').selectedIndex = 0;
+                selectedApp = '';
+            }
+
+            updateStartButton();
+            sendMessage('setMode', { mode });
+        }
+
+        function onAppSelected() {
+            const select = document.getElementById('app-select');
+            selectedApp = select.value;
+            updateStartButton();
+        }
+
+        function updateStartButton() {
+            const btn = document.getElementById('start-btn');
+            
+            if (isRecording) {
+                btn.className = 'start-btn stop';
+                btn.textContent = '⏹ DISENGAGE';
+                btn.disabled = false;
+            } else {
+                btn.className = 'start-btn start';
+                btn.textContent = '▶ ENGAGE RECORDING';
+                
+                if (currentMode === 'Display') {
+                    btn.disabled = false;
+                } else {
+                    btn.disabled = !selectedApp;
+                }
+            }
+        }
+
+        function toggleRecording() {
+            if (isRecording) {
+                sendMessage('stopRecording');
+                isRecording = false;
+                updateStatus('stopped', '⏸ STANDBY', 'Recording terminated');
+            } else {
+                if (currentMode !== 'Display' && !selectedApp) {
+                    alert('Target application required');
+                    return;
+                }
+                
+                sendMessage('startRecording', { 
+                    mode: currentMode,
+                    app: selectedApp 
+                });
+                isRecording = true;
+                updateStatus('idle', `⌛ AWAITING ${selectedApp || 'DISPLAY'}`, 'System monitoring...');
+            }
+            
+            updateStartButton();
+        }
+
+        function updateStatus(type, main, detail) {
+            const statusEl = document.getElementById('status');
+            const detailEl = document.getElementById('status-detail');
+            
+            statusEl.className = `status-main ${type}`;
+            statusEl.innerHTML = type === 'recording' ? 
+                `<span class="recording-dot"></span>${main}` : 
+                main;
+            detailEl.textContent = detail;
+        }
+
+        function updateHotkeysDisplay(hotkeys) {
+            const list = document.getElementById('hotkey-list');
+            if (!list) return;
+            
+            list.innerHTML = hotkeys.map(h => {
+                const mods = h.Modifiers.join(' + ');
+                const key = mods ? `${mods} + ${h.Key}` : h.Key;
+                return `
+                    <div class="hotkey-item">
+                        <span>${h.Name} (${h.ClipLengthSeconds}s)</span>
+                        <span class="hotkey-key">${key}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openSettings() {
+            sendMessage('openSettings');
+        }
+
+        function openClipsFolder() {
+            sendMessage('openClipsFolder');
+        }
+
+        function openLibrary() {
+            alert('Library feature coming soon!\n\nWill include:\n• Clip thumbnails\n• Trim editor\n• Title editing\n• Upload management');
+        }
+
+        // Message handler
+        if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+                const data = event.data;
+                
+                if (data.action === 'runningApps') {
+                    availableApps = data.apps;
+                    const select = document.getElementById('app-select');
+                    select.innerHTML = '<option value="">-- Select Target --</option>';
+                    data.apps.forEach(app => {
+                        const option = document.createElement('option');
+                        option.value = app;
+                        option.textContent = app;
+                        select.appendChild(option);
+                    });
+                }
+                
+                if (data.action === 'statusUpdate') {
+                    updateStatus(data.type, data.main, data.detail);
+                }
+
+                if (data.action === 'config') {
+                    currentMode = data.mode;
+                    selectedApp = data.selectedApp;
+                    isRecording = data.enabled;
+                    
+                    selectMode(currentMode);
+                    if (selectedApp) {
+                        document.getElementById('app-select').value = selectedApp;
+                    }
+                    
+                    if (data.hotkeys) {
+                        updateHotkeysDisplay(data.hotkeys);
+                    }
+                    
+                    updateStartButton();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
