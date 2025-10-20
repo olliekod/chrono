@@ -176,7 +176,7 @@
         <h1>⚙️ Settings</h1>
         <p class="subtitle">Customize your recording preferences</p>
 
-        <!-- User Settings - MOVED TO TOP -->
+        <!-- User Settings -->
         <div class="section">
             <h2>👤 User</h2>
             
@@ -249,7 +249,7 @@
     </div>
 
     <script>
-        let config = {};
+        let originalConfig = {}; // Store the original config we received
 
         // Load config on start
         window.addEventListener('DOMContentLoaded', () => {
@@ -270,7 +270,10 @@
                 const data = event.data;
                 
                 if (data.action === 'configLoaded') {
-                    config = data.config;
+                    // Store the ORIGINAL config
+                    originalConfig = JSON.parse(JSON.stringify(data.config)); // Deep clone
+                    console.log('Original config loaded:', originalConfig);
+                    console.log('Original hotkeys count:', originalConfig.Hotkeys.length);
                     populateForm();
                 }
 
@@ -282,16 +285,18 @@
         }
 
         function populateForm() {
-            // User settings - FIRST
-            document.getElementById('username').value = config.Username || '';
+            console.log('Populating form with config');
+            
+            // User settings
+            document.getElementById('username').value = originalConfig.Username || '';
 
             // Recording settings
-            document.getElementById('resolution').value = config.Resolution || '1920x1080';
-            document.getElementById('fps').value = config.Fps || 60;
-            document.getElementById('bitrate').value = config.Bitrate || 8000;
-            document.getElementById('encoder').value = config.Encoder || 'h264_nvenc';
-            document.getElementById('buffer').value = config.BufferDurationSeconds || 300;
-            document.getElementById('detected-encoder').textContent = config.Encoder || 'Unknown';
+            document.getElementById('resolution').value = originalConfig.Resolution || '1920x1080';
+            document.getElementById('fps').value = originalConfig.Fps || 60;
+            document.getElementById('bitrate').value = originalConfig.Bitrate || 8000;
+            document.getElementById('encoder').value = originalConfig.Encoder || 'h264_nvenc';
+            document.getElementById('buffer').value = originalConfig.BufferDurationSeconds || 300;
+            document.getElementById('detected-encoder').textContent = originalConfig.Encoder || 'Unknown';
 
             // Hotkeys
             renderHotkeys();
@@ -299,9 +304,15 @@
 
         function renderHotkeys() {
             const container = document.getElementById('hotkeys-container');
+            if (!container) return;
+            
+            // Clear completely
             container.innerHTML = '';
+            
+            console.log('Rendering hotkeys:', originalConfig.Hotkeys);
 
-            config.Hotkeys.forEach((hotkey, index) => {
+            // Render each hotkey
+            originalConfig.Hotkeys.forEach((hotkey, index) => {
                 const div = document.createElement('div');
                 div.className = 'form-group';
                 div.innerHTML = `
@@ -324,10 +335,12 @@
                 `;
                 container.appendChild(div);
             });
+            
+            console.log('Rendered', originalConfig.Hotkeys.length, 'hotkeys');
         }
 
         function toggleModifier(index, modifier) {
-            const mods = config.Hotkeys[index].Modifiers;
+            const mods = originalConfig.Hotkeys[index].Modifiers;
             const idx = mods.indexOf(modifier);
             
             if (idx > -1) {
@@ -362,26 +375,59 @@
             
             if (specialKeys[key]) key = specialKeys[key];
             
-            config.Hotkeys[index].Key = key;
+            originalConfig.Hotkeys[index].Key = key;
             document.getElementById(`hotkey-key-${index}`).value = key;
         }
 
         function save() {
-            // Gather form data
-            config.Username = document.getElementById('username').value;
-            config.Resolution = document.getElementById('resolution').value;
-            config.Fps = parseInt(document.getElementById('fps').value);
-            config.Bitrate = parseInt(document.getElementById('bitrate').value);
-            config.Encoder = document.getElementById('encoder').value;
-            config.BufferDurationSeconds = parseInt(document.getElementById('buffer').value);
+            console.log('=== SAVE FUNCTION CALLED ===');
+            console.log('Original config hotkeys:', originalConfig.Hotkeys.length);
+            
+            // Build ONLY the hotkeys we want to save - read directly from the DOM
+            const savedHotkeys = [];
+            
+            for (let i = 0; i < originalConfig.Hotkeys.length; i++) {
+                const lengthInput = document.getElementById(`hotkey-length-${i}`);
+                if (lengthInput) {
+                    savedHotkeys.push({
+                        Name: originalConfig.Hotkeys[i].Name,
+                        Key: originalConfig.Hotkeys[i].Key,
+                        Modifiers: [...originalConfig.Hotkeys[i].Modifiers], // Create new array
+                        ClipLengthSeconds: parseInt(lengthInput.value)
+                    });
+                }
+            }
+            
+            console.log('Built hotkeys array:', savedHotkeys);
+            console.log('Hotkeys count to save:', savedHotkeys.length);
 
-            // Update hotkey lengths
-            config.Hotkeys.forEach((hotkey, index) => {
-                hotkey.ClipLengthSeconds = parseInt(document.getElementById(`hotkey-length-${index}`).value);
-            });
+            // Build the complete config object
+            const newConfig = {
+                Username: document.getElementById('username').value,
+                ApiUrl: originalConfig.ApiUrl,
+                Resolution: document.getElementById('resolution').value,
+                Fps: parseInt(document.getElementById('fps').value),
+                Bitrate: parseInt(document.getElementById('bitrate').value),
+                Encoder: document.getElementById('encoder').value,
+                BufferDurationSeconds: parseInt(document.getElementById('buffer').value),
+                Mode: originalConfig.Mode,
+                RecorderEnabled: originalConfig.RecorderEnabled,
+                SelectedApplication: originalConfig.SelectedApplication,
+                MinimumFocusTimeSeconds: originalConfig.MinimumFocusTimeSeconds,
+                TempFolder: originalConfig.TempFolder,
+                OutputFolder: originalConfig.OutputFolder,
+                AutoUpload: originalConfig.AutoUpload,
+                CopyLinkToClipboard: originalConfig.CopyLinkToClipboard,
+                ShowNotifications: originalConfig.ShowNotifications,
+                SaveLocalCopy: originalConfig.SaveLocalCopy,
+                Hotkeys: savedHotkeys // Use the freshly built array
+            };
+
+            console.log('Final config to send:', newConfig);
+            console.log('Final hotkeys count:', newConfig.Hotkeys.length);
 
             // Send to C#
-            sendMessage('saveConfig', { config });
+            sendMessage('saveConfig', { config: newConfig });
         }
 
         function cancel() {
