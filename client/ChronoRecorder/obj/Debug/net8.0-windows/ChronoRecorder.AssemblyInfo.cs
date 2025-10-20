@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ChronoRecorder")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+899c8f856f3d2a5565e8a401605bca9c829f5146")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a494b0f49916286b9fa43b4b255a62963a3527c8")]
 [assembly: System.Reflection.AssemblyProductAttribute("ChronoRecorder")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ChronoRecorder")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

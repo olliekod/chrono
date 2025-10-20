@@ -22,18 +22,28 @@ namespace ChronoRecorder
         public WebViewHost(RecorderConfig config)
         {
             this.config = config;
+            
+            // attempt to remove default window border
+            this.Text = "Chrono";
+            this.FormBorderStyle = FormBorderStyle.None;  // Remove Windows border
+            this.BackColor = Color.FromArgb(15, 15, 18); // #0f0f12
+            this.Width = 580;
+            this.Height = 720;
+            this.StartPosition = FormStartPosition.CenterScreen;
+            
             InitializeComponent();
         }
+
+        private Point dragStartPoint;
+        private bool isDragging = false;
 
         private void InitializeComponent()
         {
             // Window setup
-            this.Text = "Chrono - Clip Recorder";
-            this.Width = 600;
-            this.Height = 700;
+            this.Text = "Chrono";
+            this.Width = 580;
+            this.Height = 720;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.FormBorderStyle = FormBorderStyle.FixedSingle;
-            this.MaximizeBox = false;
 
             // WebView2 setup
             webView = new WebView2
@@ -43,10 +53,35 @@ namespace ChronoRecorder
 
             this.Controls.Add(webView);
 
+
             // Initialize WebView2
             InitializeAsync();
+        }
 
-            
+        private void WebView_MouseDown(object sender, MouseEventArgs e)
+        {
+            // Only allow dragging from top 49px (title bar area)
+            if (e.Button == MouseButtons.Left && e.Y <= 49)
+            {
+                isDragging = true;
+                dragStartPoint = e.Location;
+            }
+        }
+
+        private void WebView_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (isDragging)
+            {
+                Point newLocation = this.Location;
+                newLocation.X += e.X - dragStartPoint.X;
+                newLocation.Y += e.Y - dragStartPoint.Y;
+                this.Location = newLocation;
+            }
+        }
+
+        private void WebView_MouseUp(object sender, MouseEventArgs e)
+        {
+            isDragging = false;
         }
 
         private async void InitializeAsync()
@@ -102,6 +137,7 @@ namespace ChronoRecorder
 
                 switch (action)
                 {
+                    // these are pretty self explanatory.
                     case "getRunningApps":
                         SendRunningAppsList();
                         break;
@@ -130,6 +166,28 @@ namespace ChronoRecorder
 
                     case "openClipsFolder":
                         OpenClipsFolder();
+                        break;
+
+                    case "minimizeWindow":
+                        this.WindowState = FormWindowState.Minimized;
+                        break;
+
+                    case "closeWindow":
+                        Application.Exit();
+                        break;
+
+                    case "openLibrary":
+                        MessageBox.Show("Library feature coming soon!", "Chrono");
+                        break;
+
+                    case "dragWindow":
+                        int x = message["x"]?.ToObject<int>() ?? 0;
+                        int y = message["y"]?.ToObject<int>() ?? 0;
+                        this.Location = new Point(x, y);
+                        break;
+
+                    case "startDrag":
+                        // Just acknowledge, actual dragging happens in dragWindow
                         break;
 
                     default:
@@ -173,6 +231,7 @@ namespace ChronoRecorder
             string json = JsonConvert.SerializeObject(status);
             webView.CoreWebView2.PostWebMessageAsJson(json);
         }
+
 
         private void SendHotkeysUpdate()
         {
@@ -323,22 +382,37 @@ namespace ChronoRecorder
                 }
                 else if (action == "saveConfig")
                 {
-                    // Update config from settings
                     var newConfig = message["config"]?.ToObject<RecorderConfig>();
                     if (newConfig != null)
                     {
-                        // Update config
+                        Console.WriteLine($"Saving config with {newConfig.Hotkeys.Count} hotkeys");
+                        
+                        // CRITICAL FIX: Completely replace the config, don't merge
+                        // Update only the fields that were in the settings UI
+                        config.Username = newConfig.Username;
                         config.Resolution = newConfig.Resolution;
                         config.Fps = newConfig.Fps;
                         config.Bitrate = newConfig.Bitrate;
                         config.Encoder = newConfig.Encoder;
                         config.BufferDurationSeconds = newConfig.BufferDurationSeconds;
-                        config.Username = newConfig.Username;
-                        config.ApiUrl = newConfig.ApiUrl;
-                        config.Hotkeys = newConfig.Hotkeys;
-
+                        
+                        // IMPORTANT: Clear and rebuild hotkeys list completely
+                        config.Hotkeys.Clear();
+                        foreach (var hotkey in newConfig.Hotkeys)
+                        {
+                            config.Hotkeys.Add(new HotkeyConfig
+                            {
+                                Name = hotkey.Name,
+                                Key = hotkey.Key,
+                                Modifiers = new List<string>(hotkey.Modifiers), // Create new list
+                                ClipLengthSeconds = hotkey.ClipLengthSeconds
+                            });
+                        }
+                        
                         // Save to disk
                         ConfigManager.Save(config);
+                        
+                        Console.WriteLine($"Config saved with {config.Hotkeys.Count} hotkeys");
 
                         // Notify settings page
                         var response = new { action = "configSaved" };
@@ -356,6 +430,7 @@ namespace ChronoRecorder
             catch (Exception ex)
             {
                 Console.WriteLine($"Error handling settings message: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -478,6 +553,8 @@ namespace ChronoRecorder
 
             try
             {
+                Console.WriteLine($"SendConfig called - sending {config.Hotkeys.Count} hotkeys");
+                
                 var message = new
                 {
                     action = "config",
@@ -493,6 +570,8 @@ namespace ChronoRecorder
                 };
                 string json = JsonConvert.SerializeObject(message);
                 webView.CoreWebView2.PostWebMessageAsJson(json);
+                
+                Console.WriteLine("Config sent to UI");
             }
             catch (Exception ex)
             {
