@@ -19,30 +19,27 @@ namespace ChronoRecorder
         private RecorderConfig config;
         private System.Windows.Forms.Timer? statusUpdateTimer;
 
+        private Point dragStartPoint;
+        private bool isDragging = false;
+
         public WebViewHost(RecorderConfig config)
         {
             this.config = config;
             
             // attempt to remove default window border
-            this.Text = "Chrono";
             this.FormBorderStyle = FormBorderStyle.None;  // Remove Windows border
             this.BackColor = Color.FromArgb(15, 15, 18); // #0f0f12
-            this.Width = 580;
-            this.Height = 720;
             this.StartPosition = FormStartPosition.CenterScreen;
             
             InitializeComponent();
         }
-
-        private Point dragStartPoint;
-        private bool isDragging = false;
 
         private void InitializeComponent()
         {
             // Window setup
             this.Text = "Chrono";
             this.Width = 580;
-            this.Height = 720;
+            this.Height = 850;
             this.StartPosition = FormStartPosition.CenterScreen;
 
             // WebView2 setup
@@ -53,35 +50,8 @@ namespace ChronoRecorder
 
             this.Controls.Add(webView);
 
-
             // Initialize WebView2
             InitializeAsync();
-        }
-
-        private void WebView_MouseDown(object sender, MouseEventArgs e)
-        {
-            // Only allow dragging from top 49px (title bar area)
-            if (e.Button == MouseButtons.Left && e.Y <= 49)
-            {
-                isDragging = true;
-                dragStartPoint = e.Location;
-            }
-        }
-
-        private void WebView_MouseMove(object sender, MouseEventArgs e)
-        {
-            if (isDragging)
-            {
-                Point newLocation = this.Location;
-                newLocation.X += e.X - dragStartPoint.X;
-                newLocation.Y += e.Y - dragStartPoint.Y;
-                this.Location = newLocation;
-            }
-        }
-
-        private void WebView_MouseUp(object sender, MouseEventArgs e)
-        {
-            isDragging = false;
         }
 
         private async void InitializeAsync()
@@ -180,15 +150,32 @@ namespace ChronoRecorder
                         MessageBox.Show("Library feature coming soon!", "Chrono");
                         break;
 
-                    case "dragWindow":
-                        int x = message["x"]?.ToObject<int>() ?? 0;
-                        int y = message["y"]?.ToObject<int>() ?? 0;
-                        this.Location = new Point(x, y);
-                        break;
-
                     case "startDrag":
-                        // Just acknowledge, actual dragging happens in dragWindow
-                        break;
+                    // Store the offset where the user clicked
+                    isDragging = true;
+                    dragStartPoint = new Point(
+                        message["offsetX"]?.ToObject<int>() ?? 0,
+                        message["offsetY"]?.ToObject<int>() ?? 0
+                    );
+                    Console.WriteLine($"Start drag at offset: {dragStartPoint.X}, {dragStartPoint.Y}");
+                    break;
+
+                case "dragWindow":
+                    if (isDragging)
+                    {
+                        int screenX = message["screenX"]?.ToObject<int>() ?? 0;
+                        int screenY = message["screenY"]?.ToObject<int>() ?? 0;
+                        this.Location = new Point(
+                            screenX - dragStartPoint.X,
+                            screenY - dragStartPoint.Y
+                        );
+                    }
+                    break;
+
+                case "stopDrag":
+                    isDragging = false;
+                    Console.WriteLine("Stop drag");
+                    break;
 
                     default:
                         Console.WriteLine($"Unknown action: {action}");
@@ -277,10 +264,11 @@ namespace ChronoRecorder
                 var settingsForm = new Form
                 {
                     Text = "Chrono Settings",
-                    Width = 800,
-                    Height = 700,
+                    Width = 650,
+                    Height = 850,
                     StartPosition = FormStartPosition.CenterScreen,
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    FormBorderStyle = FormBorderStyle.None, 
+                    BackColor = Color.FromArgb(45, 45, 42),  
                     MaximizeBox = false,
                     MinimizeBox = false,
                     ShowInTaskbar = true
@@ -385,34 +373,51 @@ namespace ChronoRecorder
                     var newConfig = message["config"]?.ToObject<RecorderConfig>();
                     if (newConfig != null)
                     {
-                        Console.WriteLine($"Saving config with {newConfig.Hotkeys.Count} hotkeys");
-                        
-                        // CRITICAL FIX: Completely replace the config, don't merge
-                        // Update only the fields that were in the settings UI
-                        config.Username = newConfig.Username;
-                        config.Resolution = newConfig.Resolution;
-                        config.Fps = newConfig.Fps;
-                        config.Bitrate = newConfig.Bitrate;
-                        config.Encoder = newConfig.Encoder;
-                        config.BufferDurationSeconds = newConfig.BufferDurationSeconds;
-                        
-                        // IMPORTANT: Clear and rebuild hotkeys list completely
-                        config.Hotkeys.Clear();
+                        Console.WriteLine($"\n=== RECEIVED CONFIG FROM UI ===");
+                        Console.WriteLine($"New config has {newConfig.Hotkeys.Count} hotkeys");
+
+                        // Create a COMPLETELY NEW config object to avoid any reference issues
+                        var configToSave = new RecorderConfig
+                        {
+                            Username = newConfig.Username,
+                            ApiUrl = newConfig.ApiUrl,
+                            Resolution = newConfig.Resolution,
+                            Fps = newConfig.Fps,
+                            Bitrate = newConfig.Bitrate,
+                            Encoder = newConfig.Encoder,
+                            BufferDurationSeconds = newConfig.BufferDurationSeconds,
+                            Mode = newConfig.Mode,
+                            RecorderEnabled = newConfig.RecorderEnabled,
+                            SelectedApplication = newConfig.SelectedApplication,
+                            MinimumFocusTimeSeconds = newConfig.MinimumFocusTimeSeconds,
+                            TempFolder = newConfig.TempFolder,
+                            OutputFolder = newConfig.OutputFolder,
+                            AutoUpload = newConfig.AutoUpload,
+                            CopyLinkToClipboard = newConfig.CopyLinkToClipboard,
+                            ShowNotifications = newConfig.ShowNotifications,
+                            SaveLocalCopy = newConfig.SaveLocalCopy,
+                            Hotkeys = new List<HotkeyConfig>() // Start with empty list
+                        };
+
+                        // Add each hotkey as a NEW object
                         foreach (var hotkey in newConfig.Hotkeys)
                         {
-                            config.Hotkeys.Add(new HotkeyConfig
+                            configToSave.Hotkeys.Add(new HotkeyConfig
                             {
                                 Name = hotkey.Name,
                                 Key = hotkey.Key,
-                                Modifiers = new List<string>(hotkey.Modifiers), // Create new list
+                                Modifiers = new List<string>(hotkey.Modifiers),
                                 ClipLengthSeconds = hotkey.ClipLengthSeconds
                             });
                         }
-                        
+
+                        Console.WriteLine($"Built new config with {configToSave.Hotkeys.Count} hotkeys");
+
                         // Save to disk
-                        ConfigManager.Save(config);
-                        
-                        Console.WriteLine($"Config saved with {config.Hotkeys.Count} hotkeys");
+                        ConfigManager.Save(configToSave);
+
+                        // Update the instance config
+                        this.config = configToSave;
 
                         // Notify settings page
                         var response = new { action = "configSaved" };
@@ -422,9 +427,37 @@ namespace ChronoRecorder
                         // Close settings window
                         settingsForm.Close();
 
-                        MessageBox.Show("Settings saved! Restart Chrono for hotkey changes to take effect.", 
+                        MessageBox.Show("Settings saved! Restart Chrono for hotkey changes to take effect.",
                             "Settings Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
+                }
+                else if (action == "startDrag")
+                {
+                    isDragging = true;
+                    dragStartPoint = new Point(
+                        message["offsetX"]?.ToObject<int>() ?? 0,
+                        message["offsetY"]?.ToObject<int>() ?? 0
+                    );
+                }
+                else if (action == "dragWindow")
+                {
+                    if (isDragging)
+                    {
+                        int screenX = message["screenX"]?.ToObject<int>() ?? 0;
+                        int screenY = message["screenY"]?.ToObject<int>() ?? 0;
+                        settingsForm.Location = new Point(
+                            screenX - dragStartPoint.X,
+                            screenY - dragStartPoint.Y
+                        );
+                    }
+                }
+                else if (action == "stopDrag")
+                {
+                    isDragging = false;
+                }
+                else if (action == "closeSettings")
+                {
+                    settingsForm.Close();
                 }
             }
             catch (Exception ex)
@@ -433,7 +466,6 @@ namespace ChronoRecorder
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }
-
         private void OpenClipsFolder()
         {
             try

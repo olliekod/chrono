@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chrono Settings</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        
         * {
             margin: 0;
             padding: 0;
@@ -12,51 +14,196 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Space Grotesk', -apple-system, sans-serif;
+            background: #2d2d2a;
+            color: #f4e8d0;
             min-height: 100vh;
             padding: 20px;
-            color: #fff;
+            position: relative;
+            border: 3px solid #ea9346;
+            box-shadow: 0 0 30px rgba(234, 147, 70, 0.3);
         }
 
-        .container {
-            max-width: 700px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.1);
+        /* Remove window wrapper */
+        .window-wrapper {
+            display: contents;
+        }
+
+        /* Window control buttons */
+        .window-controls {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            display: flex;
+            gap: 8px;
+            z-index: 1000;
+        }
+
+        .window-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(58, 58, 54, 0.95);
+            border: 2px solid #4a4a42;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            color: #8a8a7a;
+            font-size: 22px;
+            font-weight: 600;
             backdrop-filter: blur(10px);
+        }
+
+        .window-btn:hover {
+            background: rgba(74, 74, 66, 0.95);
+            border-color: #ea9346;
+            color: #f4e8d0;
+            transform: translateY(-1px);
+        }
+
+        .window-btn.close:hover {
+            background: #c4534f;
+            border-color: #c4534f;
+            color: white;
+        }
+
+        /* Decorative elements */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -30%;
+            right: -15%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(234, 147, 70, 0.08) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: -20%;
+            left: -10%;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(74, 155, 155, 0.06) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .sparkle {
+            position: fixed;
+            width: 16px;
+            height: 16px;
+            pointer-events: none;
+        }
+
+        .sparkle::before,
+        .sparkle::after {
+            content: '';
+            position: absolute;
+            background: #ea9346;
+            opacity: 0.2;
+        }
+
+        .sparkle::before {
+            width: 16px;
+            height: 2px;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+        }
+
+        .sparkle::after {
+            width: 2px;
+            height: 16px;
+            left: 50%;
+            top: 0;
+            transform: translateX(-50%);
+        }
+
+        .sparkle-1 { top: 12%; right: 8%; }
+        .sparkle-2 { top: 65%; left: 6%; opacity: 0.4; }
+        .sparkle-3 { bottom: 15%; right: 12%; transform: scale(0.8); }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: linear-gradient(135deg, #3a3a36 0%, #36362f 100%);
+            border: 2px solid #4a4a42;
             border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            position: relative;
+            z-index: 1;
+            margin-top: 40px;
+            margin-bottom: 40px;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #ea9346, transparent);
+            opacity: 0.6;
+            border-radius: 20px 20px 0 0;
         }
 
         h1 {
-            margin-bottom: 10px;
-            font-size: 28px;
+            font-size: 36px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ea9346 0%, #f4a460 50%, #ea9346 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
         }
 
         .subtitle {
-            opacity: 0.8;
-            margin-bottom: 30px;
-            font-size: 14px;
+            color: #8a8a7a;
+            font-size: 13px;
+            margin-bottom: 35px;
+            letter-spacing: 0.5px;
         }
 
         .section {
-            background: rgba(255, 255, 255, 0.08);
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
+            background: #2d2d2a;
+            border: 2px solid #4a4a42;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            position: relative;
+        }
+
+        .section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 20px;
+            right: 20px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(234, 147, 70, 0.3), transparent);
         }
 
         .section h2 {
-            font-size: 18px;
-            margin-bottom: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #f4e8d0;
+            margin-bottom: 20px;
             display: flex;
             align-items: center;
             gap: 8px;
+            letter-spacing: 0.5px;
         }
 
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
 
         .form-group:last-child {
@@ -65,118 +212,196 @@
 
         label {
             display: block;
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             font-size: 13px;
             font-weight: 600;
-            opacity: 0.9;
+            color: #ea9346;
+            letter-spacing: 0.3px;
         }
 
         input[type="text"],
         input[type="number"],
         select {
             width: 100%;
-            padding: 10px 12px;
-            border-radius: 8px;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 2px solid #4a4a42;
+            background: #3a3a36;
+            color: #f4e8d0;
             font-size: 14px;
+            font-family: 'Space Grotesk', sans-serif;
+            transition: all 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #ea9346;
+            box-shadow: 0 0 0 3px rgba(234, 147, 70, 0.1);
         }
 
         input[type="text"]::placeholder {
-            color: rgba(255, 255, 255, 0.5);
+            color: #6a6a5a;
         }
 
         select option {
-            background: #764ba2;
-            color: white;
+            background: #3a3a36;
+            color: #f4e8d0;
+        }
+
+        .info-text {
+            font-size: 11px;
+            color: #8a8a7a;
+            margin-top: 6px;
+            line-height: 1.5;
         }
 
         .hotkey-item {
             display: grid;
-            grid-template-columns: 1fr 150px 100px;
-            gap: 10px;
+            grid-template-columns: 1fr 140px 90px;
+            gap: 12px;
             align-items: end;
-        }
-
-        .key-input {
-            display: flex;
-            gap: 8px;
-        }
-
-        .modifier-chip {
-            display: inline-block;
-            background: rgba(255, 255, 255, 0.2);
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            margin-right: 4px;
-            cursor: pointer;
-            border: 2px solid transparent;
-        }
-
-        .modifier-chip.active {
-            background: rgba(145, 71, 255, 0.8);
-            border-color: rgba(145, 71, 255, 1);
         }
 
         .modifiers-group {
             display: flex;
-            gap: 6px;
-            margin-bottom: 8px;
+            gap: 8px;
+            margin-bottom: 10px;
             flex-wrap: wrap;
+        }
+
+        .modifier-chip {
+            display: inline-block;
+            background: #3a3a36;
+            border: 2px solid #4a4a42;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #8a8a7a;
+        }
+
+        .modifier-chip:hover {
+            border-color: #ea9346;
+            color: #ea9346;
+            transform: translateY(-1px);
+        }
+
+        .modifier-chip.active {
+            background: linear-gradient(135deg, #ea9346, #d97835);
+            border-color: #ea9346;
+            color: #2d2d2a;
+            box-shadow: 0 2px 10px rgba(234, 147, 70, 0.3);
         }
 
         .buttons {
             display: flex;
-            gap: 10px;
-            margin-top: 30px;
+            gap: 14px;
+            margin-top: 35px;
         }
 
         button {
             flex: 1;
-            padding: 14px;
-            border-radius: 10px;
+            padding: 16px;
+            border-radius: 12px;
             border: none;
             font-size: 15px;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
             transition: all 0.3s;
+            font-family: 'Space Grotesk', sans-serif;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.5s, height 0.5s;
+        }
+
+        button:hover::before {
+            width: 300px;
+            height: 300px;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #00c853 0%, #00e676 100%);
+            background: linear-gradient(135deg, #4a9b9b, #3a8080);
             color: white;
+            box-shadow: 0 4px 15px rgba(74, 155, 155, 0.3);
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0, 200, 83, 0.4);
+            box-shadow: 0 6px 20px rgba(74, 155, 155, 0.4);
         }
 
         .btn-secondary {
-            background: rgba(255, 255, 255, 0.15);
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            color: white;
+            background: #3a3a36;
+            border: 2px solid #4a4a42;
+            color: #8a8a7a;
         }
 
         .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.25);
+            border-color: #ea9346;
+            color: #ea9346;
+            transform: translateY(-2px);
         }
 
-        .info-text {
-            font-size: 12px;
-            opacity: 0.7;
-            margin-top: 6px;
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* Curved accent */
+        .curve-accent {
+            position: absolute;
+            width: 150px;
+            height: 80px;
+            border: 2px solid;
+            border-color: transparent rgba(74, 155, 155, 0.2) rgba(74, 155, 155, 0.2) transparent;
+            border-radius: 0 0 80px 0;
+            pointer-events: none;
+            bottom: 30px;
+            right: 30px;
+            transform: rotate(-20deg);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>⚙️ Settings</h1>
-        <p class="subtitle">Customize your recording preferences</p>
+    <!-- Decorative sparkles -->
+    <div class="sparkle sparkle-1"></div>
+    <div class="sparkle sparkle-2"></div>
+    <div class="sparkle sparkle-3"></div>
 
-        <!-- User Settings -->
+    <div class="window-wrapper">
+        <!-- Window controls -->
+        <div class="window-controls">
+            <button class="window-btn close" onclick="closeSettings()">×</button>
+        </div>
+
+        <div class="container">
+        <div class="curve-accent"></div>
+        
+        <h1>Settings</h1>
+        <p class="subtitle">Configure your recording preferences</p>
+
         <div class="section">
             <h2>👤 User</h2>
             
@@ -187,7 +412,6 @@
             </div>
         </div>
 
-        <!-- Recording Settings -->
         <div class="section">
             <h2>🎬 Recording</h2>
             
@@ -214,7 +438,7 @@
             <div class="form-group">
                 <label>Bitrate (kbps)</label>
                 <input type="number" id="bitrate" min="2000" max="50000" step="1000">
-                <div class="info-text">Higher = better quality, larger files. Recommended: 8000</div>
+                <div class="info-text">Higher = better quality, larger files (recommended: 8000)</div>
             </div>
 
             <div class="form-group">
@@ -231,30 +455,70 @@
             <div class="form-group">
                 <label>Buffer Duration (seconds)</label>
                 <input type="number" id="buffer" min="60" max="600" step="30">
-                <div class="info-text">How much recording to keep in memory. Max clip length.</div>
+                <div class="info-text">Maximum clip length you can save</div>
             </div>
         </div>
 
-        <!-- Hotkeys -->
         <div class="section">
             <h2>⌨️ Hotkeys</h2>
-            
             <div id="hotkeys-container"></div>
         </div>
 
         <div class="buttons">
             <button class="btn-secondary" onclick="cancel()">Cancel</button>
-            <button class="btn-primary" onclick="save()">💾 Save Settings</button>
+            <button class="btn-primary" onclick="save()">Save Settings</button>
         </div>
     </div>
 
     <script>
-        let originalConfig = {}; // Store the original config we received
+        // Window dragging functionality (top 50px only)
+        let isDraggingWindow = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
 
-        // Load config on start
+        document.addEventListener('mousedown', (e) => {
+            // Only allow dragging from top 50 pixels
+            if (e.clientY > 50) {
+                return;
+            }
+            
+            // Don't drag if clicking on buttons, inputs, or selects
+            if (e.target.tagName === 'BUTTON' || 
+                e.target.tagName === 'INPUT' || 
+                e.target.tagName === 'SELECT' ||
+                e.target.closest('.window-controls')) {
+                return;
+            }
+            
+            isDraggingWindow = true;
+            dragOffsetX = e.clientX;
+            dragOffsetY = e.clientY;
+            sendMessage('startDrag', { offsetX: e.clientX, offsetY: e.clientY });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDraggingWindow) {
+                sendMessage('dragWindow', { screenX: e.screenX, screenY: e.screenY });
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDraggingWindow) {
+                isDraggingWindow = false;
+                sendMessage('stopDrag');
+            }
+        });
+        let receivedConfig = null;
+        let isSaving = false;
+
         window.addEventListener('DOMContentLoaded', () => {
+            console.log('Settings page loaded, requesting config...');
             sendMessage('loadConfig');
         });
+
+        function closeSettings() {
+            sendMessage('closeSettings');
+        }
 
         function sendMessage(action, data = {}) {
             if (window.chrome && window.chrome.webview) {
@@ -264,55 +528,57 @@
             }
         }
 
-        // Receive config from C#
         if (window.chrome && window.chrome.webview) {
             window.chrome.webview.addEventListener('message', (event) => {
                 const data = event.data;
+                console.log('Received message:', data);
                 
                 if (data.action === 'configLoaded') {
-                    // Store the ORIGINAL config
-                    originalConfig = JSON.parse(JSON.stringify(data.config)); // Deep clone
-                    console.log('Original config loaded:', originalConfig);
-                    console.log('Original hotkeys count:', originalConfig.Hotkeys.length);
+                    console.log('=== CONFIG LOADED FROM C# ===');
+                    console.log('Hotkeys count:', data.config.Hotkeys.length);
+                    data.config.Hotkeys.forEach((h, i) => {
+                        console.log(`  ${i}: ${h.Name} = ${h.Modifiers.join('+')}+${h.Key} (${h.ClipLengthSeconds}s)`);
+                    });
+                    
+                    receivedConfig = data.config;
                     populateForm();
                 }
 
                 if (data.action === 'configSaved') {
+                    console.log('Config saved successfully!');
                     alert('Settings saved successfully!');
                     window.close();
+                    
                 }
             });
         }
 
         function populateForm() {
-            console.log('Populating form with config');
+            if (!receivedConfig) {
+                console.error('No config received!');
+                return;
+            }
+
+            console.log('Populating form...');
             
-            // User settings
-            document.getElementById('username').value = originalConfig.Username || '';
+            document.getElementById('username').value = receivedConfig.Username || '';
+            document.getElementById('resolution').value = receivedConfig.Resolution || '1920x1080';
+            document.getElementById('fps').value = receivedConfig.Fps || 60;
+            document.getElementById('bitrate').value = receivedConfig.Bitrate || 8000;
+            document.getElementById('encoder').value = receivedConfig.Encoder || 'h264_nvenc';
+            document.getElementById('buffer').value = receivedConfig.BufferDurationSeconds || 120;
+            document.getElementById('detected-encoder').textContent = receivedConfig.Encoder || 'Unknown';
 
-            // Recording settings
-            document.getElementById('resolution').value = originalConfig.Resolution || '1920x1080';
-            document.getElementById('fps').value = originalConfig.Fps || 60;
-            document.getElementById('bitrate').value = originalConfig.Bitrate || 8000;
-            document.getElementById('encoder').value = originalConfig.Encoder || 'h264_nvenc';
-            document.getElementById('buffer').value = originalConfig.BufferDurationSeconds || 300;
-            document.getElementById('detected-encoder').textContent = originalConfig.Encoder || 'Unknown';
-
-            // Hotkeys
             renderHotkeys();
         }
 
         function renderHotkeys() {
             const container = document.getElementById('hotkeys-container');
-            if (!container) return;
-            
-            // Clear completely
             container.innerHTML = '';
             
-            console.log('Rendering hotkeys:', originalConfig.Hotkeys);
+            console.log('Rendering hotkeys:', receivedConfig.Hotkeys.length);
 
-            // Render each hotkey
-            originalConfig.Hotkeys.forEach((hotkey, index) => {
+            receivedConfig.Hotkeys.forEach((hotkey, index) => {
                 const div = document.createElement('div');
                 div.className = 'form-group';
                 div.innerHTML = `
@@ -327,26 +593,24 @@
                     </div>
                     <div class="hotkey-item">
                         <input type="text" id="hotkey-key-${index}" value="${hotkey.Key}" 
-                               placeholder="Press a key..." onkeydown="captureKey(event, ${index})">
+                               placeholder="Press a key..." onkeydown="captureKey(event, ${index})" readonly>
                         <input type="number" id="hotkey-length-${index}" value="${hotkey.ClipLengthSeconds}" 
-                               min="5" max="300" placeholder="Seconds">
-                        <span style="font-size: 13px; opacity: 0.8;">seconds</span>
+                               min="5" max="300">
+                        <span style="font-size: 12px; color: #8a8a7a;">seconds</span>
                     </div>
                 `;
                 container.appendChild(div);
             });
-            
-            console.log('Rendered', originalConfig.Hotkeys.length, 'hotkeys');
         }
 
         function toggleModifier(index, modifier) {
-            const mods = originalConfig.Hotkeys[index].Modifiers;
-            const idx = mods.indexOf(modifier);
+            const hotkey = receivedConfig.Hotkeys[index];
+            const idx = hotkey.Modifiers.indexOf(modifier);
             
             if (idx > -1) {
-                mods.splice(idx, 1);
+                hotkey.Modifiers.splice(idx, 1);
             } else {
-                mods.push(modifier);
+                hotkey.Modifiers.push(modifier);
             }
             
             renderHotkeys();
@@ -357,81 +621,82 @@
             
             let key = event.key;
             
-            // Convert key names
             if (key === ' ') key = 'Space';
             if (key === 'Enter') key = 'Enter';
-            if (key.startsWith('F') && key.length <= 3) key = key; // F1-F12
+            if (key.startsWith('F') && key.length <= 3) key = key;
             if (key.length === 1) key = key.toUpperCase();
             
-            // Special keys
             const specialKeys = {
-                'PageUp': 'PageUp',
-                'PageDown': 'PageDown',
-                'Home': 'Home',
-                'End': 'End',
-                'Insert': 'Insert',
-                'Delete': 'Delete'
+                'PageUp': 'PageUp', 'PageDown': 'PageDown',
+                'Home': 'Home', 'End': 'End',
+                'Insert': 'Insert', 'Delete': 'Delete'
             };
             
             if (specialKeys[key]) key = specialKeys[key];
             
-            originalConfig.Hotkeys[index].Key = key;
+            receivedConfig.Hotkeys[index].Key = key;
             document.getElementById(`hotkey-key-${index}`).value = key;
         }
 
         function save() {
-            console.log('=== SAVE FUNCTION CALLED ===');
-            console.log('Original config hotkeys:', originalConfig.Hotkeys.length);
+            if (isSaving) {
+                console.log('Already saving, ignoring duplicate call');
+                return;
+            }
             
-            // Build ONLY the hotkeys we want to save - read directly from the DOM
-            const savedHotkeys = [];
+            isSaving = true;
             
-            for (let i = 0; i < originalConfig.Hotkeys.length; i++) {
+            console.log('\n=== SAVE FUNCTION CALLED ===');
+            console.log('Original hotkeys count:', receivedConfig.Hotkeys.length);
+            
+            const finalHotkeys = [];
+            
+            for (let i = 0; i < receivedConfig.Hotkeys.length; i++) {
                 const lengthInput = document.getElementById(`hotkey-length-${i}`);
                 if (lengthInput) {
-                    savedHotkeys.push({
-                        Name: originalConfig.Hotkeys[i].Name,
-                        Key: originalConfig.Hotkeys[i].Key,
-                        Modifiers: [...originalConfig.Hotkeys[i].Modifiers], // Create new array
+                    const hotkey = {
+                        Name: receivedConfig.Hotkeys[i].Name,
+                        Key: receivedConfig.Hotkeys[i].Key,
+                        Modifiers: [...receivedConfig.Hotkeys[i].Modifiers],
                         ClipLengthSeconds: parseInt(lengthInput.value)
-                    });
+                    };
+                    finalHotkeys.push(hotkey);
+                    console.log(`Built hotkey ${i}:`, hotkey);
                 }
             }
             
-            console.log('Built hotkeys array:', savedHotkeys);
-            console.log('Hotkeys count to save:', savedHotkeys.length);
-
-            // Build the complete config object
-            const newConfig = {
+            console.log('Final hotkeys to send:', finalHotkeys.length);
+            
+            const configToSend = {
                 Username: document.getElementById('username').value,
-                ApiUrl: originalConfig.ApiUrl,
+                ApiUrl: receivedConfig.ApiUrl,
                 Resolution: document.getElementById('resolution').value,
                 Fps: parseInt(document.getElementById('fps').value),
                 Bitrate: parseInt(document.getElementById('bitrate').value),
                 Encoder: document.getElementById('encoder').value,
                 BufferDurationSeconds: parseInt(document.getElementById('buffer').value),
-                Mode: originalConfig.Mode,
-                RecorderEnabled: originalConfig.RecorderEnabled,
-                SelectedApplication: originalConfig.SelectedApplication,
-                MinimumFocusTimeSeconds: originalConfig.MinimumFocusTimeSeconds,
-                TempFolder: originalConfig.TempFolder,
-                OutputFolder: originalConfig.OutputFolder,
-                AutoUpload: originalConfig.AutoUpload,
-                CopyLinkToClipboard: originalConfig.CopyLinkToClipboard,
-                ShowNotifications: originalConfig.ShowNotifications,
-                SaveLocalCopy: originalConfig.SaveLocalCopy,
-                Hotkeys: savedHotkeys // Use the freshly built array
+                Mode: receivedConfig.Mode,
+                RecorderEnabled: receivedConfig.RecorderEnabled,
+                SelectedApplication: receivedConfig.SelectedApplication,
+                MinimumFocusTimeSeconds: receivedConfig.MinimumFocusTimeSeconds,
+                TempFolder: receivedConfig.TempFolder,
+                OutputFolder: receivedConfig.OutputFolder,
+                AutoUpload: receivedConfig.AutoUpload,
+                CopyLinkToClipboard: receivedConfig.CopyLinkToClipboard,
+                ShowNotifications: receivedConfig.ShowNotifications,
+                SaveLocalCopy: receivedConfig.SaveLocalCopy,
+                Hotkeys: finalHotkeys
             };
 
-            console.log('Final config to send:', newConfig);
-            console.log('Final hotkeys count:', newConfig.Hotkeys.length);
-
-            // Send to C#
-            sendMessage('saveConfig', { config: newConfig });
+            console.log('Sending config with', configToSend.Hotkeys.length, 'hotkeys');
+            
+            sendMessage('saveConfig', { config: configToSend });
+            
+            setTimeout(() => { isSaving = false; }, 2000);
         }
 
         function cancel() {
-            window.close();
+            sendMessage('closeSettings');
         }
     </script>
 </body>

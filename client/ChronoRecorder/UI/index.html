@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chrono</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
-        @import url('https://fonts.cdnfonts.com/css/retrolight');
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
         
         * {
             margin: 0;
@@ -15,340 +14,500 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: #0f0f12;
-            color: #e8e6e3;
+            font-family: 'Space Grotesk', -apple-system, sans-serif;
+            background: #2d2d2a;
+            color: #f4e8d0;
             height: 100vh;
             overflow: hidden;
+            position: relative;
+            border: 3px solid #ea9346;
+            box-shadow: 0 0 30px rgba(234, 147, 70, 0.3);
         }
 
-        /* Custom title bar */
-        .title-bar {
-            background: linear-gradient(135deg, #1a1d2e 0%, #16161a 100%);
-            padding: 10px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #2a2d3a;
-            -webkit-app-region: drag;
-            cursor: move;
+        /* Decorative background elements */
+        body::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(234, 147, 70, 0.08) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
         }
 
-        .title-bar-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        body::after {
+            content: '';
+            position: absolute;
+            bottom: -30%;
+            left: -15%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(74, 155, 155, 0.06) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
         }
 
-        .app-icon {
+        /* Sparkle decorations */
+        .sparkle {
+            position: absolute;
             width: 20px;
             height: 20px;
-            background: linear-gradient(135deg, #d63031, #e17055);
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
+            pointer-events: none;
         }
 
-        .app-title {
-            font-size: 12px;
-            font-weight: 600;
-            color: #e8e6e3;
+        .sparkle::before,
+        .sparkle::after {
+            content: '';
+            position: absolute;
+            background: #ea9346;
+            opacity: 0.3;
         }
 
-        .title-bar-buttons {
+        .sparkle::before {
+            width: 20px;
+            height: 3px;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+        }
+
+        .sparkle::after {
+            width: 3px;
+            height: 20px;
+            left: 50%;
+            top: 0;
+            transform: translateX(-50%);
+        }
+
+        .sparkle-1 { top: 15%; left: 10%; }
+        .sparkle-2 { top: 70%; right: 15%; opacity: 0.5; }
+        .sparkle-3 { bottom: 20%; left: 20%; transform: scale(0.7); }
+
+        /* Window control buttons - floating in top right */
+        .window-controls {
+            position: fixed;
+            top: 16px;
+            right: 16px;
             display: flex;
-            gap: 6px;
+            gap: 8px;
+            z-index: 100;
             -webkit-app-region: no-drag;
         }
 
-        .title-btn {
-            width: 28px;
-            height: 28px;
-            background: transparent;
-            border: none;
-            border-radius: 4px;
+        .window-btn {
+            width: 36px;
+            height: 36px;
+            background: rgba(58, 58, 54, 0.9);
+            border: 2px solid #4a4a42;
+            border-radius: 8px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
-            color: #6c757d;
-            font-size: 16px;
+            color: #8a8a7a;
+            font-size: 20px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
         }
 
-        .title-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #e8e6e3;
+        .window-btn:hover {
+            background: rgba(74, 74, 66, 0.9);
+            border-color: #ea9346;
+            color: #f4e8d0;
+            transform: translateY(-1px);
         }
 
-        .title-btn.close:hover {
-            background: #d63031;
+        .window-btn.close:hover {
+            background: #c4534f;
+            border-color: #c4534f;
             color: white;
         }
 
+        .title-bar {
+            display: none;
+        }
+
+        .title-bar-left {
+            display: none;
+        }
+
+        .app-icon {
+            display: none;
+        }
+
+        .app-title {
+            display: none;
+        }
+
+        .title-bar-buttons {
+            display: none;
+        }
+
+        .title-btn {
+            display: none;
+        }
+
         .container {
-            padding: 24px;
-            height: calc(100vh - 49px);
+            padding: 30px;
+            height: 100vh;
+            overflow: visible;
+            position: relative;
+            z-index: 1;
         }
 
         .logo {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
         }
 
         .logo h1 {
-            font-family: 'Retrolight', 'Impact', 'Inter', sans-serif;
-            font-size: 48px;
-            font-weight: 800;
-            color: #d63031;
-            letter-spacing: 6px;
-            margin-bottom: 2px;
-            text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
+            font-size: 56px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ea9346 0%, #f4a460 50%, #ea9346 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 3px;
+            margin-bottom: 4px;
+            text-shadow: 0 2px 20px rgba(234, 147, 70, 0.3);
         }
 
         .logo p {
-            font-size: 10px;
-            color: #6c757d;
-            letter-spacing: 2px;
+            font-size: 11px;
+            color: #8a8a7a;
+            letter-spacing: 3px;
             text-transform: uppercase;
         }
 
         .status-card {
-            background: linear-gradient(135deg, #1e1e24 0%, #18181d 100%);
-            border: 1px solid #2a2d3a;
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 18px;
+            background: linear-gradient(135deg, #3a3a36 0%, #36362f 100%);
+            border: 2px solid #4a4a42;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .status-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #ea9346, transparent);
+            opacity: 0.5;
         }
 
         .status-main {
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 600;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
         }
 
         .status-main.recording {
-            color: #d63031;
+            color: #ea9346;
         }
 
         .status-main.idle {
-            color: #e17055;
+            color: #4a9b9b;
         }
 
         .status-main.stopped {
-            color: #6c757d;
+            color: #8a8a7a;
         }
 
         .recording-dot {
             display: inline-block;
-            width: 7px;
-            height: 7px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: #d63031;
-            margin-right: 7px;
+            background: #ea9346;
+            margin-right: 8px;
             animation: pulse 1.5s infinite;
+            box-shadow: 0 0 10px rgba(234, 147, 70, 0.6);
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
         }
 
         .status-detail {
-            font-size: 12px;
-            color: #8d99ae;
+            font-size: 13px;
+            color: #8a8a7a;
         }
 
         .section-label {
             font-size: 10px;
-            color: #6c757d;
-            letter-spacing: 1.5px;
+            color: #8a8a7a;
+            letter-spacing: 2px;
             text-transform: uppercase;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-weight: 600;
         }
 
         .mode-selector {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 18px;
+            gap: 12px;
+            margin-bottom: 24px;
         }
 
         .mode-btn {
-            background: #1e1e24;
-            border: 1px solid #2a2d3a;
-            color: #8d99ae;
-            padding: 12px;
-            border-radius: 6px;
-            font-size: 13px;
+            background: #3a3a36;
+            border: 2px solid #4a4a42;
+            color: #8a8a7a;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
-            font-family: 'Inter', sans-serif;
+            transition: all 0.3s;
+            font-family: 'Space Grotesk', sans-serif;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mode-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(234, 147, 70, 0.1), transparent);
+            transition: left 0.5s;
+        }
+
+        .mode-btn:hover::before {
+            left: 100%;
         }
 
         .mode-btn:hover {
-            background: #252530;
-            border-color: #4facfe;
-            color: #4facfe;
+            border-color: #ea9346;
+            color: #ea9346;
+            transform: translateY(-2px);
         }
 
         .mode-btn.active {
-            background: linear-gradient(135deg, #4facfe, #00c9ff);
-            border-color: #4facfe;
-            color: white;
+            background: linear-gradient(135deg, #ea9346, #d97835);
+            border-color: #ea9346;
+            color: #2d2d2a;
+            box-shadow: 0 4px 15px rgba(234, 147, 70, 0.3);
         }
 
         .app-selector {
-            margin-bottom: 18px;
+            margin-bottom: 24px;
         }
 
         .app-selector select {
             width: 100%;
-            padding: 12px;
-            background: #1e1e24;
-            border: 1px solid #2a2d3a;
-            border-radius: 6px;
-            color: #e8e6e3;
-            font-size: 13px;
+            padding: 14px 16px;
+            background: #3a3a36;
+            border: 2px solid #4a4a42;
+            border-radius: 12px;
+            color: #f4e8d0;
+            font-size: 14px;
             cursor: pointer;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
+            transition: all 0.2s;
         }
 
         .app-selector select:focus {
             outline: none;
-            border-color: #4facfe;
+            border-color: #ea9346;
+            box-shadow: 0 0 0 3px rgba(234, 147, 70, 0.1);
         }
 
         .app-selector select option {
-            background: #1e1e24;
+            background: #3a3a36;
         }
 
         .start-btn {
             width: 100%;
-            padding: 16px;
-            border-radius: 8px;
+            padding: 18px;
+            border-radius: 12px;
             border: none;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 700;
             cursor: pointer;
-            transition: all 0.2s;
-            margin-bottom: 18px;
-            font-family: 'Inter', sans-serif;
+            transition: all 0.3s;
+            margin-bottom: 24px;
+            font-family: 'Space Grotesk', sans-serif;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .start-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .start-btn:hover::before {
+            width: 300px;
+            height: 300px;
         }
 
         .start-btn.start {
-            background: linear-gradient(135deg, #00b894, #00cec9);
+            background: linear-gradient(135deg, #4a9b9b, #3a8080);
             color: white;
+            box-shadow: 0 4px 15px rgba(74, 155, 155, 0.3);
         }
 
         .start-btn.start:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0, 184, 148, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(74, 155, 155, 0.4);
         }
 
         .start-btn.stop {
-            background: linear-gradient(135deg, #d63031, #e17055);
+            background: linear-gradient(135deg, #c4534f, #a84340);
             color: white;
+            box-shadow: 0 4px 15px rgba(196, 83, 79, 0.3);
         }
 
         .start-btn.stop:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(214, 48, 49, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(196, 83, 79, 0.4);
         }
 
         .start-btn:disabled {
             opacity: 0.4;
             cursor: not-allowed;
+            transform: none !important;
         }
 
         .hotkeys-card {
-            background: #1e1e24;
-            border: 1px solid #2a2d3a;
-            border-radius: 8px;
-            padding: 14px;
-            margin-bottom: 18px;
+            background: #3a3a36;
+            border: 2px solid #4a4a42;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
         }
 
         .hotkeys-card h3 {
-            font-size: 12px;
-            color: #feca57;
-            margin-bottom: 12px;
+            font-size: 13px;
+            color: #ea9346;
+            margin-bottom: 16px;
             font-weight: 600;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
         }
 
         .hotkey-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
-            font-size: 13px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            padding: 10px 0;
+            border-bottom: 1px solid #4a4a42;
         }
 
         .hotkey-item:last-child {
             margin-bottom: 0;
+            border-bottom: none;
         }
 
         .hotkey-name {
-            color: #e8e6e3;
+            color: #f4e8d0;
         }
 
         .hotkey-key {
-            background: rgba(254, 202, 87, 0.15);
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-family: 'IBM Plex Mono', monospace;
-            border: 1px solid rgba(254, 202, 87, 0.3);
-            color: #feca57;
-            font-size: 11px;
+            background: rgba(234, 147, 70, 0.15);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            border: 1px solid rgba(234, 147, 70, 0.3);
+            color: #ea9346;
+            font-size: 12px;
             font-weight: 600;
         }
 
         .actions {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 8px;
+            gap: 12px;
         }
 
         .action-btn {
-            background: #1e1e24;
-            border: 1px solid #2a2d3a;
-            color: #8d99ae;
-            padding: 12px 8px;
-            border-radius: 6px;
-            font-size: 11px;
+            background: #3a3a36;
+            border: 2px solid #4a4a42;
+            color: #8a8a7a;
+            padding: 14px 10px;
+            border-radius: 12px;
+            font-size: 12px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
         }
 
         .action-btn:hover {
-            background: #252530;
-            border-color: #4facfe;
-            color: #4facfe;
+            border-color: #4a9b9b;
+            color: #4a9b9b;
+            transform: translateY(-2px);
         }
 
         .hidden {
             display: none;
         }
+
+        /* Curved accent lines */
+        .curve-accent {
+            position: absolute;
+            width: 200px;
+            height: 100px;
+            border: 3px solid;
+            border-color: transparent #ea9346 #ea9346 transparent;
+            border-radius: 0 0 100px 0;
+            opacity: 0.1;
+            pointer-events: none;
+        }
+
+        .curve-accent-1 {
+            top: 10%;
+            right: 5%;
+            transform: rotate(-15deg);
+        }
+
+        .curve-accent-2 {
+            bottom: 15%;
+            left: 8%;
+            transform: rotate(165deg);
+            border-color: transparent #4a9b9b #4a9b9b transparent;
+        }
     </style>
 </head>
 <body>
-    <div class="title-bar">
-        <div class="title-bar-left">
-            <div class="app-icon">⏱</div>
-            <span class="app-title">Chrono</span>
-        </div>
-        <div class="title-bar-buttons">
-            <button class="title-btn" onclick="minimizeWindow()">−</button>
-            <button class="title-btn close" onclick="closeWindow()">×</button>
-        </div>
+    <!-- Decorative sparkles -->
+    <div class="sparkle sparkle-1"></div>
+    <div class="sparkle sparkle-2"></div>
+    <div class="sparkle sparkle-3"></div>
+    
+    <!-- Curved accents -->
+    <div class="curve-accent curve-accent-1"></div>
+    <div class="curve-accent curve-accent-2"></div>
+
+    <!-- Window controls -->
+    <div class="window-controls">
+        <button class="window-btn" onclick="minimizeWindow()">−</button>
+        <button class="window-btn close" onclick="closeWindow()">×</button>
     </div>
 
     <div class="container">
@@ -405,39 +564,42 @@
     </div>
 
     <script>
-        // Window dragging
-        let isDragging = false;
-        let dragOffset = { x: 0, y: 0 };
+        // Window dragging functionality
+        let isDraggingWindow = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const titleBar = document.querySelector('.title-bar');
+        document.addEventListener('mousedown', (e) => {
+            // Only allow dragging from top 50 pixels
+            if (e.clientY > 50) {
+                return;
+            }
             
-            titleBar.addEventListener('mousedown', (e) => {
-                // Don't drag if clicking buttons
-                if (e.target.classList.contains('title-btn')) return;
-                
-                isDragging = true;
-                dragOffset.x = e.clientX;
-                dragOffset.y = e.clientY;
-                sendMessage('startDrag', { x: e.screenX - e.clientX, y: e.screenY - e.clientY });
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (isDragging) {
-                    sendMessage('dragWindow', { 
-                        x: e.screenX - dragOffset.x, 
-                        y: e.screenY - dragOffset.y 
-                    });
-                }
-            });
-
-            document.addEventListener('mouseup', () => {
-                isDragging = false;
-            });
+            // Don't drag if clicking on buttons, inputs, or selects
+            if (e.target.tagName === 'BUTTON' || 
+                e.target.tagName === 'INPUT' || 
+                e.target.tagName === 'SELECT' ||
+                e.target.closest('.window-controls')) {
+                return;
+            }
             
-            // Existing initialization
-            sendMessage('getRunningApps');
-            sendMessage('getConfig');
+            isDraggingWindow = true;
+            dragOffsetX = e.clientX;
+            dragOffsetY = e.clientY;
+            sendMessage('startDrag', { offsetX: e.clientX, offsetY: e.clientY });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDraggingWindow) {
+                sendMessage('dragWindow', { screenX: e.screenX, screenY: e.screenY });
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDraggingWindow) {
+                isDraggingWindow = false;
+                sendMessage('stopDrag');
+            }
         });
 
         let currentMode = 'Application';
@@ -556,7 +718,6 @@
             sendMessage('closeWindow');
         }
 
-        // Message handler
         if (window.chrome && window.chrome.webview) {
             window.chrome.webview.addEventListener('message', (event) => {
                 const data = event.data;
