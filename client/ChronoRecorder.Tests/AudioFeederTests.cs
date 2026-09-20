@@ -104,7 +104,7 @@ namespace ChronoRecorder.Tests
             feeder.Run(clock.Cts.Token);
 
             // Two seconds of time, two seconds of audio (a little behind on purpose: see the idle margin).
-            Assert.InRange(pipe.Frames, (long)(1.85 * Rate), 2 * Rate);
+            Assert.InRange(pipe.Frames, (long)(1.55 * Rate), 2 * Rate);
             Assert.All(pipe.Bytes, b => Assert.Equal(0, b));
         }
 
@@ -119,7 +119,7 @@ namespace ChronoRecorder.Tests
 
             feeder.Run(clock.Cts.Token);
 
-            Assert.InRange(pipe.Frames, (long)(5.85 * Rate), 6 * Rate);
+            Assert.InRange(pipe.Frames, (long)(5.55 * Rate), 6 * Rate);
         }
 
         // ------------------------------------------------------ sound goes where it was captured
@@ -159,15 +159,15 @@ namespace ChronoRecorder.Tests
         {
             var (feeder, pipe, clock) = Make();
             clock.StopAt = TimeSpan.FromSeconds(2);
-            // 300 ms of sound ending at t = 1.0 s, so it began at 0.7 s. Idle padding has already run to about
-            // 0.9 s, so the front of the chunk would be played twice if it were written whole.
-            PushAt(clock, feeder, 1.0, marker: 5, frames: Rate * 3 / 10);
+            // 500 ms of sound ending at t = 1.0 s, so it began at 0.5 s. Idle padding has already run to about
+            // 0.7 s, so the front of the chunk would be played twice if it were written whole.
+            PushAt(clock, feeder, 1.0, marker: 5, frames: Rate / 2);
 
             feeder.Run(clock.Cts.Token);
 
             long first = FirstFrameOf(pipe, 5);
             int kept = CountOf(pipe, 5);
-            Assert.InRange(kept, 1, Rate * 3 / 10 - 1);                     // trimmed, not written whole
+            Assert.InRange(kept, 1, Rate / 2 - 1);                     // trimmed, not written whole
             Assert.InRange(first + kept, Rate - 20, Rate + 20);              // and it still ends when it was captured
         }
 
@@ -201,6 +201,53 @@ namespace ChronoRecorder.Tests
             int last = Array.LastIndexOf(bytes, (byte)3);
             int zerosInside = bytes.Skip(first).Take(last - first + 1).Count(b => b == 0);
             Assert.InRange(zerosInside / BytesPerFrame, 0, Rate / 50);   // at most a couple of frames' worth of slack
+        }
+
+        /// <summary>
+        /// Real devices hand over contiguous sound in lumps whose delivery time wanders by tens of ms, especially
+        /// while a game is loading the CPU. That wander must not be treated as gaps and overlaps in the sound:
+        /// doing so cut a hole of a few tens of ms every ~200 ms, heard as the audio "bobbing in and out".
+        /// </summary>
+        [Theory]
+        [InlineData(1, 0.08)]
+        [InlineData(2, 0.08)]
+        [InlineData(3, 0.15)]
+        public void SoundThatArrivesInLumpsWithWanderingDelivery_IsWrittenWithoutHolesOrDrops(int seed, double maxJitterSeconds)
+        {
+            var (feeder, pipe, clock) = Make();
+            clock.StopAt = TimeSpan.FromSeconds(4);
+
+            // 100 ms lumps of continuous sound; lump k really covers [0.5 + 0.1k, 0.6 + 0.1k], delivered late by a random amount.
+            var rng = new Random(seed);
+            var arrivals = new List<double>();
+            double lastArrival = 0;
+            for (int k = 0; k < 30; k++)
+            {
+                double at = Math.Max(0.6 + 0.1 * k + rng.NextDouble() * maxJitterSeconds, lastArrival + 0.001);
+                arrivals.Add(at);
+                lastArrival = at;
+            }
+
+            int delivered = 0;
+            clock.OnSleep = now =>
+            {
+                while (delivered < arrivals.Count && now.TotalSeconds >= arrivals[delivered])
+                {
+                    feeder.Push(Chunk(3, Rate / 10));
+                    delivered++;
+                }
+            };
+
+            feeder.Run(clock.Cts.Token);
+
+            Assert.Equal(30, delivered);
+            Assert.Equal(30 * (Rate / 10), CountOf(pipe, 3));   // every frame of sound made it in
+
+            var bytes = pipe.Bytes;
+            int first = Array.IndexOf(bytes, (byte)3);
+            int last = Array.LastIndexOf(bytes, (byte)3);
+            int zerosInside = bytes.Skip(first).Take(last - first + 1).Count(b => b == 0) / BytesPerFrame;
+            Assert.InRange(zerosInside, 0, Rate / 100);   // and no holes punched between the lumps (10 ms of slack)
         }
 
         [Fact]

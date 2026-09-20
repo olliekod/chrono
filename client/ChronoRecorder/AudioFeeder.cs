@@ -10,10 +10,15 @@ namespace ChronoRecorder
     ///
     /// The picture is timestamped with the wall clock (seconds since a shared start time T0). This class makes the
     /// audio stream match: <b>the position of a sample in the stream is the time it was captured</b>, measured from
-    /// the same T0. It gets there by timestamping each chunk as the device delivers it, and when writing:
-    ///  - inserting silence up to the chunk's capture time if the stream is behind it,
-    ///  - trimming the chunk's head if the stream is already past it,
-    ///  - and padding silence while the device is quiet (loopback capture delivers nothing during silence).
+    /// the same T0. Each chunk is timestamped as the device delivers it, and that timestamp is used to *place* sound:
+    ///  - the first sound after silence goes exactly where it was captured (silence inserted up to it, or its head
+    ///    trimmed if the stream is already past it),
+    ///  - while sound keeps flowing, chunks are written back to back, exactly as the device supplied them. The
+    ///    device's samples are contiguous; only their delivery time wobbles (tens of ms, more when a game loads the
+    ///    CPU). Realigning to every wobble punched a hole into the sound every ~200 ms and dropped the overlaps: the
+    ///    "bobbing in and out" heard in real recordings. The stream is only realigned if it has drifted far,
+    ///  - and silence is padded while the device is quiet (loopback capture delivers nothing during silence), but
+    ///    only after it has been quiet for a while, so a late chunk is never mistaken for silence.
     ///
     /// Because sound is placed by capture time, not write time, nothing that delays the writing can shift it. That
     /// includes FFmpeg taking seconds to start reading and then reading in lumps while it also handles video: in
@@ -25,14 +30,15 @@ namespace ChronoRecorder
     {
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(5);
 
-        /// <summary>While sound is flowing, a chunk this close to where the previous one ended is written as it is;
-        /// farther, it is realigned. Device chunks arrive with a few ms of jitter, which must not become clicks.
-        /// (The first sound after silence is always placed exactly.)</summary>
-        private static readonly TimeSpan Tolerance = TimeSpan.FromMilliseconds(40);
+        /// <summary>While sound is flowing, a chunk whose delivery time says it belongs this far from where the
+        /// previous one ended is still written as it is (the wobble of delivery times). Farther means something
+        /// really happened (a stall, a device switch), and the stream is realigned. The first sound after silence
+        /// is always placed exactly.</summary>
+        private static readonly TimeSpan Tolerance = TimeSpan.FromMilliseconds(250);
 
-        /// <summary>While idle, silence is only written up to this far behind the clock, so a chunk delivered a
-        /// little late still finds its place open instead of overlapping padding.</summary>
-        private static readonly TimeSpan IdleMargin = TimeSpan.FromMilliseconds(100);
+        /// <summary>Idle: silence is only written once the stream is this far behind the clock, and only up to that
+        /// margin. Longer than the delivery wobble, so a late chunk still finds its place open.</summary>
+        private static readonly TimeSpan IdleMargin = TimeSpan.FromMilliseconds(300);
 
         /// <summary>Sound queued behind a stalled pipe is stale; keep only the newest this much.</summary>
         private static readonly TimeSpan MaxBuffered = TimeSpan.FromSeconds(2);
@@ -109,6 +115,7 @@ namespace ChronoRecorder
                 bool followsSound = false;                            // the last thing written was captured sound, not padding
                 long tolerance = (long)(Tolerance.TotalSeconds * sampleRate);
                 long idleMargin = (long)(IdleMargin.TotalSeconds * sampleRate);
+                long idleThreshold = idleMargin / 3;   // don't write silence in tiny pieces
 
                 void Write(byte[] data, int offset, int count, bool isSound)
                 {
@@ -148,7 +155,7 @@ namespace ChronoRecorder
 
                     // Nothing (more) from the device: keep the stream moving with the clock.
                     long target = (long)(clock().TotalSeconds * sampleRate) + delayFrames - idleMargin;
-                    if (target - position > tolerance) WriteSilence(target - position);
+                    if (target - position > idleThreshold) WriteSilence(target - position);
 
                     sleep(PollInterval);
                 }
