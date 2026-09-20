@@ -64,6 +64,15 @@ namespace ChronoRecorder
         }
         public string TempFolder { get; set; } = Path.Combine(Path.GetTempPath(), "Chrono");
         public string OutputFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonVideos), "Chrono");
+        /// <summary>Record what you hear: the game, voice chat, music (the default output device).</summary>
+        public bool RecordAudio { get; set; } = true;
+
+        /// <summary>Also record the default microphone. Off by default: it is a privacy decision.</summary>
+        public bool RecordMicrophone { get; set; } = false;
+
+        /// <summary>Trim a constant audio/video offset, in milliseconds (positive delays the sound). Normally 0.</summary>
+        public int AudioDelayMs { get; set; } = 0;
+
         public bool AutoUpload { get; set; } = true;
         public bool CopyLinkToClipboard { get; set; } = true;
         public bool ShowNotifications { get; set; } = true;

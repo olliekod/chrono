@@ -39,7 +39,7 @@ dotnet test ../ChronoRecorder.Tests                                  # xUnit, pu
 dotnet test ../ChronoRecorder.Tests --filter "FullyQualifiedName~ClipPlannerTests"   # one class
 ```
 - Requires `ffmpeg` and `ffprobe` on `PATH` (the full FFmpeg build ships both) and the Edge WebView2 runtime.
-- Tests cover `ClipPlanner`, `EncoderProfile`, `HotkeyParser`, config handling, `UploadRules` and `Uploader` (against a fake HTTP handler). Anything that spawns FFmpeg or needs a window is verified by hand, so keep new logic in small pure classes where you can.
+- Tests cover `ClipPlanner`, `EncoderProfile`, `CaptureCommand`, `CaptureSizing`, `SegmentTracker`, `MonitorLocator`, `AudioFeeder`, `HotkeyParser`, config handling, `UploadRules` and `Uploader` (against a fake HTTP handler). Anything that spawns FFmpeg or needs a window is verified by hand, so keep new logic in small pure classes where you can.
 - It is an `Exe` that logs heavily with `Console.WriteLine`; run it from a terminal to see the log.
 - `UI/**` is copied to the output dir, so edits to the HTML only take effect after a build/run.
 - User config lives at `%APPDATA%\Chrono\config.json`. Delete it to regenerate defaults (including GPU encoder auto-detection).
@@ -63,6 +63,19 @@ Why it is built this way, since each part was a bug once:
 - Copy mode can only start on a keyframe and drops everything before the first one at or after `-ss`. So the plan asks for `EncoderProfile.KeyframeIntervalSeconds` of extra footage, and clips come out between N and about N+2.5s, never shorter. Keyframes are forced by time (`-force_key_frames`), which also makes the segment muxer split on exact 10.000s boundaries.
 - Encoder flags live in `EncoderProfile`: presets are per-encoder (`-preset p4` is NVENC-only). Only NVENC was verified on real hardware; AMF and QSV are untested.
 
+**Audio (`AudioCapture.cs`, `AudioFeeder.cs`, `AudioInput.cs`).** FFmpeg on Windows can't capture system sound (it only sees microphones through DirectShow), so sound comes from Windows itself: NAudio's WASAPI loopback of the default output (the game, Discord voice, music), plus optionally the default microphone. `AudioCapture` runs each source into a named pipe that FFmpeg reads as a raw audio input, and `CaptureCommand` mixes several with `amix` and encodes stereo AAC. The pipes must exist before FFmpeg starts, so `Recorder.LaunchFfmpeg` creates the captures first. A missing device or unsupported format only drops that source (a `Warning` event and a notification); it never stops the recording. `RecordAudio` is on by default and `RecordMicrophone` off, since recording a mic is a privacy decision.
+
+**Keeping sound and picture in sync is the hard part, and the design comes from measurement.** Picture and sound are both timed from one shared instant, T0 (`Recorder` takes it before creating the audio sources). Video frames are stamped `setpts=(time(0)-T0)/TB` with `-fps_mode cfr`; `AudioFeeder` places every chunk of sound in the stream at (its capture time - T0). What was tried, in order, each measured with a rig that flashes a monitor white while playing a 1 kHz tone:
+- Plain pipe: sound **0.4-0.9 s early**, and varying per run. FFmpeg zeroes each input's clock at that input's own first data, and it spends 3-5 s starting up before it reads any audio, so the backlog plays back as a head start.
+- Timestamping frames and audio by wall-clock arrival: warnings, mangled timelines.
+- Waiting for FFmpeg to start reading, then starting the audio clock: sound **0.2-0.6 s early**, still variable.
+- Placing sound by *write* time: a constant ~0.5 s **late**. FFmpeg reads the pipe in lumps while it also handles video, so captured sound waited 100-400 ms in the queue and inherited that as delay.
+- Placing sound by *capture* time (current design): **+1 to +23 ms** over repeated runs, and +1 ms in a clip saved through the whole segment/join path. Nothing that delays the writing can shift it.
+
+Details that matter: the pipe has a 4 KB buffer so writes block while FFmpeg starts (the feeder catches up to "now" when it unblocks instead of playing the backlog); loopback capture delivers nothing while nothing plays (and on the dev machine also delivers continuous zero buffers), so the feeder pads silence to keep the stream on the clock; the first sound after silence is placed exactly, while continuous chunks get a 40 ms jitter tolerance so device timing noise doesn't become clicks; `AudioDelayMs` in the config trims any residual constant offset.
+
+To re-measure sync, flash a full-screen window white on a monitor that is being recorded while a tone starts, then find both in the saved file. Do it on a monitor with no fullscreen game: a fullscreen game draws over the flash. Play the tone from an already-running low-latency render stream (`WasapiOut`), not `SoundPlayer`, whose start-up delay under load (a game running) is hundreds of ms. Find the tone by frequency (Goertzel at 1 kHz), not by loudness, because game audio may be present. Injecting fake audio into the feeder while the real device is also delivering data adds up: the device fills the timeline, so each injected beep shifts everything later.
+
 **When it records.** A 1-second timer polls the foreground process (`WindowDetector`, user32 P/Invoke). In `Application` mode recording starts and stops as the selected app gains and loses focus; in `Display` mode it runs whenever the recorder is enabled. Application mode only gates start/stop; capture is always the full desktop.
 
 **Hotkeys (`HotkeyManager.cs`, `HotkeyParser.cs`).** Uses `RegisterHotKey` against a hidden `NativeWindow`; the ID is the list index + 1, and pressed IDs are resolved through a dictionary of what was actually registered. Saving settings raises `WebViewHost.ConfigSaved`, and `Program` responds with `ReloadHotkeys()`, so no restart is needed.
@@ -76,7 +89,9 @@ Why it is built this way, since each part was a bug once:
 - GPU scaling was tried and doesn't work yet. On the FFmpeg here (2024-07 build) `hwmap` to CUDA is not implemented; on FFmpeg 9.0.2, `scale_d3d11` fails with `Could not create the texture (80070057)`. Scaling therefore stays on the CPU.
 - The user's game monitor is 2560x1440 landscape and the second monitor is a rotated 1440x2560, which Desktop Duplication returns un-rotated, hence the GDI route for rotated monitors. A monitor on a second GPU takes the same route.
 - Recording still stops when the tracked app loses focus (Application mode), so clicking the other monitor pauses the buffer.
-- No audio is captured yet.
+- Sound follows the default output device only when it is *removed*: unplugging a headset restarts the recording on the new device. Changing the default output while both stay connected is not detected, and the loopback keeps capturing the old device.
+- FFmpeg must be recent enough for `amix ... normalize=0` (used only when the microphone is on). FFmpeg 7.1-dev (2024-07) and 9.0.2 both have it.
+- NAudio is pinned to 2.2.1: 3.x targets .NET 9 only and this project is .NET 8.
 - The settings page (`UI/settings.html`) builds the outgoing config field by field. A new config property that isn't added there is silently reset to its default on every save.
 - `SaveLocalCopy` is not used yet: clips always stay in `OutputFolder`, and nothing is deleted after upload.
 - Not implemented yet: the trim UI (`TODO` in `Program.OnHotkeyPressed`) and the library (`openLibrary` is a stub). `SendStatusUpdate()` (no args) sends placeholder buffer text.

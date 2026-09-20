@@ -46,6 +46,7 @@ namespace ChronoRecorder
 
             // FFmpeg failures arrive on a worker thread; the tray icon belongs to the UI thread.
             recorder.RecordingFailed += message => OnUiThread(() => notifier?.Error("Recording problem", message));
+            recorder.Warning += message => OnUiThread(() => notifier?.Error("Chrono", message));
             // Settings edit the shared config in place; re-register so new hotkeys work without a restart.
             mainWindow.ConfigSaved += () => hotkeyManager.ReloadHotkeys();
 

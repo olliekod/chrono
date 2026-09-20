@@ -99,6 +99,176 @@ namespace ChronoRecorder.Tests
             Assert.Contains("-vf \"scale=1920:1080:flags=fast_bilinear\"", args);
         }
 
+        // ---------------------------------------------------------------- audio
+
+        private static AudioInput Pipe(string name = "a", int rate = 48000, int channels = 2, AudioSampleFormat format = AudioSampleFormat.Float32)
+            => new($@"\\.\pipe\chrono_{name}", rate, channels, format);
+
+        private static CaptureRequest WithAudio(params AudioInput[] inputs)
+            => Request("h264_nvenc", Dda()) with { Audio = inputs, ClockStartUnixSeconds = 1758400000.0 };
+
+        [Fact]
+        public void NoAudio_AddsNothingAudioRelated()
+        {
+            string args = CaptureCommand.Build(Request("h264_nvenc", Dda()));
+
+            Assert.DoesNotContain("-map", args);
+            Assert.DoesNotContain("-c:a", args);
+            Assert.DoesNotContain("pipe", args);
+        }
+
+        [Fact]
+        public void OneAudioSource_ReadsItsPipeAndMapsBothStreams()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("sys")));
+
+            Assert.Contains(@"-f f32le -ar 48000 -ac 2 -i \\.\pipe\chrono_sys", args);
+            Assert.Contains("-map 0:v:0 -map 1:a:0", args);
+            Assert.Contains("-c:a aac -b:a 160k -ar 48000 -ac 2", args);
+            Assert.DoesNotContain("amix", args);
+        }
+
+        [Fact]
+        public void AudioIsReadAfterTheVideoInput_SoStreamNumbersMatchTheMaps()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("sys")));
+
+            Assert.True(args.IndexOf("ddagrab") < args.IndexOf("pipe"));
+            Assert.True(args.IndexOf("pipe") < args.IndexOf("-map"));
+        }
+
+        [Fact]
+        public void TheAudioFormatOfTheDeviceIsPassedThrough()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("x", rate: 44100, channels: 8, format: AudioSampleFormat.Pcm16)));
+
+            Assert.Contains(@"-f s16le -ar 44100 -ac 8 -i", args);
+            Assert.Contains("-c:a aac -b:a 160k -ar 48000 -ac 2", args);   // always mixed down to stereo for the clip
+        }
+
+        [Fact]
+        public void TwoAudioSources_AreMixedTogether()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("sys"), Pipe("mic", rate: 44100, format: AudioSampleFormat.Pcm16)));
+
+            Assert.Contains(@"-i \\.\pipe\chrono_sys", args);
+            Assert.Contains(@"-i \\.\pipe\chrono_mic", args);
+            Assert.Contains("-filter_complex \"[1:a][2:a]amix=inputs=2:duration=longest:normalize=0[aout]\"", args);
+            Assert.Contains("-map 0:v:0 -map \"[aout]\"", args);
+        }
+
+        [Fact]
+        public void Audio_WorksWithTheGdiFallbackToo()
+        {
+            var gdi = new CaptureSource(CaptureMethod.Gdi, 0, new Rectangle(0, 0, 2560, 1440));
+            string args = CaptureCommand.Build(Request("h264_nvenc", gdi) with { Audio = new[] { Pipe("sys") }, ClockStartUnixSeconds = 1758400000.0 });
+
+            Assert.Contains("-f gdigrab", args);
+            Assert.Contains("-map 0:v:0 -map 1:a:0", args);
+        }
+
+        [Fact]
+        public void AudioStaysBeforeTheOutput()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("sys")));
+
+            Assert.True(args.IndexOf("-c:a") < args.IndexOf("-f segment"));
+            Assert.EndsWith($"-y \"{Pattern}\"", args);
+        }
+
+        // ------------------------------------------------ audio and picture share one clock
+
+        private const double T0 = 1758400000.1234;
+        private const string ClockFilter = "setpts=(time(0)-1758400000.123)/TB";
+
+        private static CaptureRequest Synced(CaptureSource? source = null, Size? output = null, string encoder = "h264_nvenc", int fps = 60)
+        {
+            var src = source ?? Dda();
+            return Request(encoder, src, output, fps) with { Audio = new[] { Pipe("sys") }, ClockStartUnixSeconds = T0 };
+        }
+
+        [Fact]
+        public void WithAudio_TheVideoIsStampedAgainstTheSharedStartTime()
+        {
+            string args = CaptureCommand.Build(Synced());
+
+            Assert.Contains($"-vf \"{ClockFilter}\"", args);   // still no CPU work: it only relabels frames
+            Assert.Contains("-fps_mode cfr -r 60", args);
+        }
+
+        [Fact]
+        public void TheStartTimeIsWrittenTheSameWayInAnyCulture()
+        {
+            var previous = System.Globalization.CultureInfo.CurrentCulture;
+            try
+            {
+                System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");   // decimal comma
+                string args = CaptureCommand.Build(Synced());
+
+                Assert.Contains("1758400000.123", args);
+                Assert.DoesNotContain("1758400000,123", args);
+            }
+            finally { System.Globalization.CultureInfo.CurrentCulture = previous; }
+        }
+
+        [Fact]
+        public void TheClockFilterComesFirst_BeforeAnyCpuWork()
+        {
+            string scaled = CaptureCommand.Build(Synced(output: new Size(1920, 1080)));
+            string software = CaptureCommand.Build(Synced(encoder: "libx264"));
+
+            Assert.Contains($"-vf \"{ClockFilter},hwdownload,format=bgra,scale=1920:1080:flags=fast_bilinear,format=nv12\"", scaled);
+            Assert.Contains($"-vf \"{ClockFilter},hwdownload,format=bgra,format=yuv420p\"", software);
+        }
+
+        [Fact]
+        public void TheClockFilterAlsoCoversTheGdiFallback()
+        {
+            var gdi = new CaptureSource(CaptureMethod.Gdi, 0, new Rectangle(0, 0, 2560, 1440));
+
+            string args = CaptureCommand.Build(Synced(source: gdi, output: new Size(1920, 1080)));
+
+            Assert.Contains($"-vf \"{ClockFilter},scale=1920:1080:flags=fast_bilinear\"", args);
+        }
+
+        [Fact]
+        public void TheFrameRateFollowsTheSetting()
+        {
+            Assert.Contains("-fps_mode cfr -r 144", CaptureCommand.Build(Synced(fps: 144)));
+        }
+
+        [Fact]
+        public void WithoutAudio_NothingChanges()
+        {
+            string args = CaptureCommand.Build(Request("h264_nvenc", Dda()) with { ClockStartUnixSeconds = T0 });
+
+            Assert.DoesNotContain("setpts", args);
+            Assert.DoesNotContain("-fps_mode", args);
+            Assert.DoesNotContain("-vf", args);
+        }
+
+        [Fact]
+        public void AudioNeedsTheSharedStartTime()
+        {
+            var request = Request("h264_nvenc", Dda()) with { Audio = new[] { Pipe("sys") } };
+
+            Assert.Throws<ArgumentException>(() => CaptureCommand.Build(request));
+        }
+
+        [Fact]
+        public void EveryOutputOptionComesAfterTheLastInput()
+        {
+            // ffmpeg treats an option placed before an -i as an input option and refuses output-only ones there.
+            string args = CaptureCommand.Build(Synced(output: new Size(1920, 1080)) with { Audio = new[] { Pipe("sys"), Pipe("mic") } });
+
+            int lastInput = args.LastIndexOf(" -i ");
+            Assert.True(args.IndexOf("-vf") > lastInput);
+            Assert.True(args.IndexOf("-map") > lastInput);
+            Assert.True(args.IndexOf("-c:v") > lastInput);
+            Assert.True(args.IndexOf("-c:a") > lastInput);
+            Assert.True(args.IndexOf("-fps_mode") > lastInput);
+        }
+
         // ---------------------------------------------------------- segmenting
 
         [Fact]

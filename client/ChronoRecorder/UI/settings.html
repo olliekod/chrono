@@ -484,6 +484,17 @@
         </div>
 
         <div class="section">
+            <h2>🔊 Audio</h2>
+
+            <div class="form-group">
+                <label class="check"><input type="checkbox" id="recordAudio"> Record game and voice chat sound</label>
+                <div class="info-text">Everything you hear on your default output, including friends in Discord</div>
+                <label class="check"><input type="checkbox" id="recordMic"> Also record my microphone</label>
+                <div class="info-text">Off by default. Turn on if you want your own voice in clips</div>
+            </div>
+        </div>
+
+        <div class="section">
             <h2>⌨️ Hotkeys</h2>
             <div id="hotkeys-container"></div>
         </div>
@@ -591,6 +602,8 @@
             document.getElementById('autoUpload').checked = receivedConfig.AutoUpload !== false;
             document.getElementById('copyLink').checked = receivedConfig.CopyLinkToClipboard !== false;
             document.getElementById('showNotifications').checked = receivedConfig.ShowNotifications !== false;
+            document.getElementById('recordAudio').checked = receivedConfig.RecordAudio !== false;
+            document.getElementById('recordMic').checked = receivedConfig.RecordMicrophone === true;
             document.getElementById('resolution').value = receivedConfig.Resolution || 'native';
             document.getElementById('fps').value = receivedConfig.Fps || 60;
             document.getElementById('bitrate').value = receivedConfig.Bitrate || 8000;
@@ -714,6 +727,9 @@
                 AutoUpload: document.getElementById('autoUpload').checked,
                 CopyLinkToClipboard: document.getElementById('copyLink').checked,
                 ShowNotifications: document.getElementById('showNotifications').checked,
+                RecordAudio: document.getElementById('recordAudio').checked,
+                RecordMicrophone: document.getElementById('recordMic').checked,
+                AudioDelayMs: receivedConfig.AudioDelayMs || 0,
                 SaveLocalCopy: receivedConfig.SaveLocalCopy,
                 Hotkeys: finalHotkeys
             };

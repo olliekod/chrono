@@ -29,6 +29,7 @@ namespace ChronoRecorder
 
         private static int SegmentSeconds => RecorderConfig.SegmentSeconds;
         private string? resolvedEncoder;
+        private List<AudioCapture> audioCaptures = new List<AudioCapture>();
 
         private System.Threading.Timer? monitorTimer;
         private System.Threading.Timer? pruneTimer;
@@ -37,6 +38,9 @@ namespace ChronoRecorder
 
         /// <summary>Raised when recording stops for a reason the user should hear about. The text is fit to show.</summary>
         public event Action<string>? RecordingFailed;
+
+        /// <summary>Something the user should know that doesn't stop recording, such as sound not being captured.</summary>
+        public event Action<string>? Warning;
 
         public bool IsRecordingActive => isRecording;
 
@@ -155,7 +159,67 @@ namespace ChronoRecorder
                 }
             }
 
+            DisposeAudio();
             Console.WriteLine("✓ Recording stopped");
+        }
+
+        /// <summary>
+        /// Open the sound sources for a recording. A source that can't be opened is skipped with a warning, so a
+        /// missing microphone or an odd audio device costs the sound, not the recording.
+        /// </summary>
+        private List<AudioCapture> CreateAudioCaptures(double clockStart)
+        {
+            var captures = new List<AudioCapture>();
+            if (!config.RecordAudio) return captures;
+
+            var delay = TimeSpan.FromMilliseconds(config.AudioDelayMs);
+
+            void Add(AudioSource source, string what)
+            {
+                var capture = AudioCapture.TryCreate(source, clockStart, delay, out string? problem);
+                if (capture == null)
+                {
+                    Console.WriteLine($"⚠ No {what}: {problem}");
+                    Warning?.Invoke($"Recording without {what}: {problem}.");
+                    return;
+                }
+
+                capture.Failed += reason => OnAudioFailed(capture, what, reason);
+                captures.Add(capture);
+            }
+
+            Add(AudioSource.SystemSound, "game and system sound");
+            if (config.RecordMicrophone) Add(AudioSource.Microphone, "microphone");
+
+            return captures;
+        }
+
+        /// <summary>A sound device went away mid-recording. Restarting reopens whatever is the default now.</summary>
+        private void OnAudioFailed(AudioCapture capture, string what, string reason)
+        {
+            Process? process;
+            lock (processLock)
+            {
+                if (!audioCaptures.Contains(capture) || !isRecording) return;
+                process = ffmpegProcess;
+            }
+
+            Console.WriteLine($"⚠ {what} stopped ({reason}); restarting the recording");
+            Warning?.Invoke($"The {what} device changed. Restarting the recording.");
+
+            // Ending FFmpeg takes the normal "capture dropped" path, which relaunches with the current devices.
+            try { process?.Kill(); } catch { }
+        }
+
+        private void DisposeAudio()
+        {
+            List<AudioCapture> old;
+            lock (processLock)
+            {
+                old = audioCaptures;
+                audioCaptures = new List<AudioCapture>();
+            }
+            foreach (var capture in old) capture.Dispose();
         }
 
         /// <summary>
@@ -168,9 +232,17 @@ namespace ChronoRecorder
             string run = SegmentTracker.NewRunId();
             Size output = CaptureSizing.Resolve(config.Resolution, source.Bounds.Size);
 
+            // Picture and sound are both timed from one instant, T0. Set before the audio sources exist.
+            double clockStart = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+            DisposeAudio();
+            var audio = CreateAudioCaptures(clockStart);
+            audioCaptures = audio;
+
             var request = new CaptureRequest(
                 ResolveEncoder(), config.Fps, config.Bitrate, source, output,
-                SegmentSeconds, SegmentTracker.NamePattern(config.TempFolder, run));
+                SegmentSeconds, SegmentTracker.NamePattern(config.TempFolder, run),
+                Audio: audio.Select(a => a.Input).ToList(),
+                ClockStartUnixSeconds: audio.Count > 0 ? clockStart : null);
 
             Console.WriteLine($"▶ Recording {source.Bounds.Width}x{source.Bounds.Height} monitor at {output.Width}x{output.Height} " +
                               $"{config.Fps}fps via {source.Method}{(output != source.Bounds.Size ? " (scaled on the CPU)" : "")}");
@@ -205,8 +277,19 @@ namespace ChronoRecorder
             DateTime started = DateTime.UtcNow;
             process.Exited += (s, e) => OnFfmpegExited(process, source, started, recentErrors);
 
-            process.Start();
+            try
+            {
+                process.Start();
+            }
+            catch
+            {
+                DisposeAudio();
+                throw;
+            }
             process.BeginErrorReadLine();
+
+            // FFmpeg opens the audio pipes as it starts; the captures wait for that and then feed them.
+            foreach (var capture in audio) capture.Start();
 
             ffmpegProcess = process;
             currentRun = run;
