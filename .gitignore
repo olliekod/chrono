@@ -16,3 +16,10 @@ bin/
 obj/
 .vs/
 *.user
+
+# Worker
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
+worker/.prod-upload-key
+worker/worker-configuration.d.ts

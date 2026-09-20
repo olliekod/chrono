@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "chrono-clips",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-20",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 }
+  },
+
+  // Non-secret settings. UPLOAD_KEY is a secret: `wrangler secret put UPLOAD_KEY`.
+  "vars": {
+    // Largest clip accepted (bytes). 1 GiB.
+    "MAX_UPLOAD_BYTES": "1073741824",
+    // Size of each upload part (bytes). R2 needs >= 5 MiB, and Workers cap request bodies at 100 MB.
+    "PART_SIZE_BYTES": "16777216"
+  },
+
+  "r2_buckets": [
+    { "binding": "CLIPS", "bucket_name": "chrono-clips" }
+  ],
+
+  "d1_databases": [
+    { "binding": "DB", "database_name": "chrono", "migrations_dir": "migrations" }
+  ]
+}
