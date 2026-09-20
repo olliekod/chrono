@@ -442,11 +442,12 @@
             <div class="form-group">
                 <label>Resolution</label>
                 <select id="resolution">
-                    <option value="native">Native (recommended, lightest)</option>
-                    <option value="1920x1080">1080p (scaled, uses more CPU)</option>
-                    <option value="1280x720">720p (scaled, uses some CPU)</option>
+                    <option value="native">Native (original size, largest files)</option>
+                    <option value="2560x1440">1440p</option>
+                    <option value="1920x1080">1080p (recommended)</option>
+                    <option value="1280x720">720p (smallest files)</option>
                 </select>
-                <div class="info-text">Native records your monitor as it is and barely touches your CPU. Smaller sizes are shrunk on the CPU while you play.</div>
+                <div class="info-text">Clips are shrunk on your graphics card right after you save them (a few seconds). This never affects the game, which is always recorded at full size.</div>
             </div>
 
             <div class="form-group">
@@ -598,7 +599,7 @@
             document.getElementById('showNotifications').checked = receivedConfig.ShowNotifications !== false;
             document.getElementById('recordAudio').checked = receivedConfig.RecordAudio !== false;
             document.getElementById('recordMic').checked = receivedConfig.RecordMicrophone === true;
-            document.getElementById('resolution').value = receivedConfig.Resolution || 'native';
+            document.getElementById('resolution').value = receivedConfig.Resolution || '1920x1080';
             document.getElementById('fps').value = receivedConfig.Fps || 60;
             document.getElementById('bitrate').value = receivedConfig.Bitrate || 8000;
             document.getElementById('encoder').value = receivedConfig.Encoder || 'h264_nvenc';

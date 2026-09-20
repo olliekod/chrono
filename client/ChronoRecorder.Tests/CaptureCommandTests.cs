@@ -10,8 +10,8 @@ namespace ChronoRecorder.Tests
         private static CaptureSource Dda(int output = 0, int w = 2560, int h = 1440)
             => new(CaptureMethod.DesktopDuplication, output, new Rectangle(0, 0, w, h));
 
-        private static CaptureRequest Request(string encoder, CaptureSource source, Size? output = null, int fps = 60)
-            => new(encoder, fps, 8000, source, output ?? source.Bounds.Size, 10, Pattern);
+        private static CaptureRequest Request(string encoder, CaptureSource source, int fps = 60)
+            => new(encoder, fps, 8000, source, 10, Pattern);
 
         // ---------------------------------------------------------------- GPU capture
 
@@ -47,22 +47,6 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
-        public void Scaled_DownloadsAndScalesOnTheCpu()
-        {
-            string args = CaptureCommand.Build(Request("h264_nvenc", Dda(), new Size(1920, 1080)));
-
-            Assert.Contains("-vf \"hwdownload,format=bgra,scale=1920:1080:flags=fast_bilinear,format=nv12\"", args);
-        }
-
-        [Fact]
-        public void Scaled_WithSoftwareEncoding_EndsInYuv420p()
-        {
-            string args = CaptureCommand.Build(Request("libx264", Dda(), new Size(1280, 720)));
-
-            Assert.Contains("scale=1280:720:flags=fast_bilinear,format=yuv420p\"", args);
-        }
-
-        [Fact]
         public void UsesTheConfiguredFrameRateAndBitrate()
         {
             string args = CaptureCommand.Build(Request("h264_nvenc", Dda(), fps: 90));
@@ -87,16 +71,6 @@ namespace ChronoRecorder.Tests
             Assert.DoesNotContain("ddagrab", args);
             Assert.DoesNotContain("hwdownload", args);
             Assert.DoesNotContain("-vf", args);
-        }
-
-        [Fact]
-        public void Gdi_Scaled_UsesASimpleScaleFilter()
-        {
-            var source = new CaptureSource(CaptureMethod.Gdi, 0, new Rectangle(0, 0, 2560, 1440));
-
-            string args = CaptureCommand.Build(Request("h264_nvenc", source, new Size(1920, 1080)));
-
-            Assert.Contains("-vf \"scale=1920:1080:flags=fast_bilinear\"", args);
         }
 
         // ---------------------------------------------------------------- audio
@@ -181,10 +155,10 @@ namespace ChronoRecorder.Tests
         private const double T0 = 1758400000.1234;
         private const string ClockFilter = "setpts=(time(0)-1758400000.123)/TB";
 
-        private static CaptureRequest Synced(CaptureSource? source = null, Size? output = null, string encoder = "h264_nvenc", int fps = 60)
+        private static CaptureRequest Synced(CaptureSource? source = null, string encoder = "h264_nvenc", int fps = 60)
         {
             var src = source ?? Dda();
-            return Request(encoder, src, output, fps) with { Audio = new[] { Pipe("sys") }, ClockStartUnixSeconds = T0 };
+            return Request(encoder, src, fps) with { Audio = new[] { Pipe("sys") }, ClockStartUnixSeconds = T0 };
         }
 
         [Fact]
@@ -212,12 +186,10 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
-        public void TheClockFilterComesFirst_BeforeAnyCpuWork()
+        public void TheClockFilterComesFirst_BeforeAnySoftwareEncodingWork()
         {
-            string scaled = CaptureCommand.Build(Synced(output: new Size(1920, 1080)));
             string software = CaptureCommand.Build(Synced(encoder: "libx264"));
 
-            Assert.Contains($"-vf \"{ClockFilter},hwdownload,format=bgra,scale=1920:1080:flags=fast_bilinear,format=nv12\"", scaled);
             Assert.Contains($"-vf \"{ClockFilter},hwdownload,format=bgra,format=yuv420p\"", software);
         }
 
@@ -226,9 +198,10 @@ namespace ChronoRecorder.Tests
         {
             var gdi = new CaptureSource(CaptureMethod.Gdi, 0, new Rectangle(0, 0, 2560, 1440));
 
-            string args = CaptureCommand.Build(Synced(source: gdi, output: new Size(1920, 1080)));
+            string args = CaptureCommand.Build(Synced(source: gdi));
 
-            Assert.Contains($"-vf \"{ClockFilter},scale=1920:1080:flags=fast_bilinear\"", args);
+            Assert.Contains($"-vf \"{ClockFilter}\"", args);
+            Assert.Contains("-pix_fmt yuv420p", args);
         }
 
         [Fact]
@@ -259,7 +232,7 @@ namespace ChronoRecorder.Tests
         public void EveryOutputOptionComesAfterTheLastInput()
         {
             // ffmpeg treats an option placed before an -i as an input option and refuses output-only ones there.
-            string args = CaptureCommand.Build(Synced(output: new Size(1920, 1080)) with { Audio = new[] { Pipe("sys"), Pipe("mic") } });
+            string args = CaptureCommand.Build(Synced(encoder: "libx264") with { Audio = new[] { Pipe("sys"), Pipe("mic") } });
 
             int lastInput = args.LastIndexOf(" -i ");
             Assert.True(args.IndexOf("-vf") > lastInput);
@@ -267,6 +240,18 @@ namespace ChronoRecorder.Tests
             Assert.True(args.IndexOf("-c:v") > lastInput);
             Assert.True(args.IndexOf("-c:a") > lastInput);
             Assert.True(args.IndexOf("-fps_mode") > lastInput);
+        }
+
+        [Fact]
+        public void RecordingIsAlwaysAtTheMonitorsOwnSize_NothingIsResizedLive()
+        {
+            // Resizing live costs about a CPU core; clips are shrunk when they are saved instead.
+            foreach (var encoder in new[] { "h264_nvenc", "h264_amf", "h264_qsv", "libx264" })
+            {
+                string args = CaptureCommand.Build(Request(encoder, Dda()));
+                Assert.DoesNotContain("scale", args);
+                Assert.DoesNotContain("-s ", args);
+            }
         }
 
         // ---------------------------------------------------------- segmenting

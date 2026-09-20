@@ -28,7 +28,6 @@ namespace ChronoRecorder
         int Fps,
         int BitrateKbps,
         CaptureSource Source,
-        Size Output,
         int SegmentSeconds,
         string SegmentPattern,
         IReadOnlyList<AudioInput>? Audio = null,
@@ -36,6 +35,8 @@ namespace ChronoRecorder
 
     /// <summary>
     /// Builds the one long-running FFmpeg command that captures a monitor and writes rolling segments.
+    /// Always at the monitor's native size: that is nearly free (frames never leave the GPU), whereas resizing
+    /// live costs about a CPU core. Shrinking a clip is done when it is saved (see <see cref="ExportCommand"/>).
     /// Pure, so the exact arguments are unit-tested.
     /// </summary>
     public static class CaptureCommand
@@ -44,7 +45,6 @@ namespace ChronoRecorder
         {
             string encoder = EncoderProfile.Normalize(r.Encoder);
             bool software = encoder == "libx264";
-            bool scaled = r.Output != r.Source.Bounds.Size;
             var audio = r.Audio ?? new List<AudioInput>();
 
             if (audio.Count > 0 && r.ClockStartUnixSeconds is null)
@@ -90,19 +90,10 @@ namespace ChronoRecorder
                 videoFilters.Add($"setpts=(time(0)-{t0})/TB");
             }
 
-            if (r.Source.Method == CaptureMethod.DesktopDuplication)
-            {
-                // Frames arrive as GPU textures. A hardware encoder takes them as they are; anything else
-                // (scaling, software encoding) has to bring them to system memory first, which is what costs CPU.
-                if (scaled)
-                    videoFilters.Add($"hwdownload,format=bgra,scale={r.Output.Width}:{r.Output.Height}:flags=fast_bilinear,format={(software ? "yuv420p" : "nv12")}");
-                else if (software)
-                    videoFilters.Add("hwdownload,format=bgra,format=yuv420p");
-            }
-            else if (scaled)
-            {
-                videoFilters.Add($"scale={r.Output.Width}:{r.Output.Height}:flags=fast_bilinear");
-            }
+            // Desktop Duplication frames are GPU textures. A hardware encoder takes them as they are; software
+            // encoding has to bring them to system memory first, which costs CPU.
+            if (r.Source.Method == CaptureMethod.DesktopDuplication && software)
+                videoFilters.Add("hwdownload,format=bgra,format=yuv420p");
 
             if (videoFilters.Count > 0)
                 parts.Add($"-vf \"{string.Join(",", videoFilters)}\"");

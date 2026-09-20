@@ -30,6 +30,7 @@ namespace ChronoRecorder
         private static int SegmentSeconds => RecorderConfig.SegmentSeconds;
         private string? resolvedEncoder;
         private List<AudioCapture> audioCaptures = new List<AudioCapture>();
+        private Size nativeSize;   // the monitor's size, which is what is recorded
 
         private System.Threading.Timer? monitorTimer;
         private System.Threading.Timer? pruneTimer;
@@ -41,6 +42,9 @@ namespace ChronoRecorder
 
         /// <summary>Something the user should know that doesn't stop recording, such as sound not being captured.</summary>
         public event Action<string>? Warning;
+
+        /// <summary>Shrink saved clips on the NVIDIA GPU when possible. Off only to test the CPU fallback.</summary>
+        public bool PreferGpuExport { get; set; } = true;
 
         public bool IsRecordingActive => isRecording;
 
@@ -238,7 +242,6 @@ namespace ChronoRecorder
             Directory.CreateDirectory(config.TempFolder);
 
             string run = SegmentTracker.NewRunId();
-            Size output = CaptureSizing.Resolve(config.Resolution, source.Bounds.Size);
 
             // Picture and sound are both timed from one instant, T0. Set before the audio sources exist.
             double clockStart = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
@@ -247,13 +250,12 @@ namespace ChronoRecorder
             audioCaptures = audio;
 
             var request = new CaptureRequest(
-                ResolveEncoder(), config.Fps, config.Bitrate, source, output,
+                ResolveEncoder(), config.Fps, config.Bitrate, source,
                 SegmentSeconds, SegmentTracker.NamePattern(config.TempFolder, run),
                 Audio: audio.Select(a => a.Input).ToList(),
                 ClockStartUnixSeconds: audio.Count > 0 ? clockStart : null);
 
-            Console.WriteLine($"▶ Recording {source.Bounds.Width}x{source.Bounds.Height} monitor at {output.Width}x{output.Height} " +
-                              $"{config.Fps}fps via {source.Method}{(output != source.Bounds.Size ? " (scaled on the CPU)" : "")}");
+            Console.WriteLine($"▶ Recording the {source.Bounds.Width}x{source.Bounds.Height} monitor at {config.Fps}fps via {source.Method}");
 
             var process = new Process
             {
@@ -301,7 +303,8 @@ namespace ChronoRecorder
 
             ffmpegProcess = process;
             currentRun = run;
-            CaptureResolution = CaptureSizing.Describe(output);
+            nativeSize = source.Bounds.Size;
+            CaptureResolution = CaptureSizing.Describe(nativeSize);
             isRecording = true;
         }
 
@@ -422,14 +425,15 @@ namespace ChronoRecorder
             return spans;
         }
         /// <summary>
-        /// Save the last N seconds from the buffer to the output folder
+        /// Save the last N seconds from the buffer to the output folder. Copy-joins the segments when the clip should
+        /// stay at the monitor's size, and otherwise shrinks it (on the NVIDIA GPU where possible) as it saves.
         /// </summary>
         public string SaveClip(int clipLengthSeconds, string clipName = "")
         {
-            // Copy mode can only start on a keyframe and drops everything before the first one at or after the
-            // seek point. Plan one keyframe interval extra so the clip lands between N and N+interval seconds,
-            // never shorter than asked.
-            var plan = ClipPlanner.Plan(SnapshotSpans(), clipLengthSeconds + EncoderProfile.KeyframeIntervalSeconds)
+            Size? exportSize = ExportPlanner.ExportSize(config.Resolution, nativeSize);
+            bool transcode = exportSize != null;
+
+            var plan = ClipPlanner.Plan(SnapshotSpans(), ExportPlanner.PlannedSeconds(clipLengthSeconds, transcode))
                 ?? throw new InvalidOperationException("No footage in the buffer yet");
 
             if (plan.AvailableSeconds < clipLengthSeconds)
@@ -445,7 +449,7 @@ namespace ChronoRecorder
             Directory.CreateDirectory(config.OutputFolder);
             string outputPath = UniquePath(config.OutputFolder, filename, ".mp4");
 
-            ConcatenateSegments(plan, outputPath);
+            ExportClip(plan, outputPath, exportSize, Math.Min(clipLengthSeconds, plan.AvailableSeconds));
 
             Console.WriteLine($"✓ Clip saved: {outputPath}");
             return outputPath;
@@ -464,9 +468,11 @@ namespace ChronoRecorder
         }
 
         /// <summary>
-        /// Join the planned segments and start the clip at the plan's seek offset (no re-encode).
+        /// Turn the planned segments into a finished clip: copy them together, or shrink them to
+        /// <paramref name="size"/>. Shrinking uses NVIDIA's decoder and encoder when the recording is NVENC, and
+        /// falls back to doing it in software if that fails.
         /// </summary>
-        private void ConcatenateSegments(ClipPlan plan, string outputPath)
+        private void ExportClip(ClipPlan plan, string outputPath, Size? size, double lengthSeconds)
         {
             string concatFilePath = Path.Combine(config.TempFolder, $"concat_{Guid.NewGuid():N}.txt");
 
@@ -475,47 +481,70 @@ namespace ChronoRecorder
                 var entries = plan.Segments.Select(s => $"file '{EscapeConcatPath(s.Path)}'");
                 File.WriteAllLines(concatFilePath, entries, new UTF8Encoding(false));
 
-                // -ss before -i seeks within the joined footage, so the extra footage at the START is skipped
-                // and the newest is kept. In copy mode the clip then starts at the first keyframe at or after
-                // this point; the plan already includes one keyframe interval of slack for that.
-                string seek = plan.SeekSeconds > 0.05
-                    ? $"-ss {plan.SeekSeconds.ToString("F3", CultureInfo.InvariantCulture)} "
-                    : "";
+                string encoder = ResolveEncoder();
+                ExportRequest Request(ExportMode mode) => new ExportRequest(
+                    concatFilePath, outputPath, plan.SeekSeconds, lengthSeconds, mode,
+                    size ?? nativeSize, encoder, config.Bitrate, config.Fps);
 
-                string args = $"-hide_banner -loglevel error {seek}" +
-                              $"-f concat -safe 0 -i \"{concatFilePath}\" " +
-                              $"-c copy -movflags +faststart -y \"{outputPath}\"";
-
-                using var process = new Process
+                if (size == null)
                 {
-                    StartInfo = new ProcessStartInfo
+                    RunFfmpeg(ExportCommand.Build(Request(ExportMode.Copy)));
+                    return;
+                }
+
+                if (PreferGpuExport && ExportPlanner.CanUseGpu(encoder))
+                {
+                    try
                     {
-                        FileName = "ffmpeg",
-                        Arguments = args,
-                        UseShellExecute = false,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true
+                        RunFfmpeg(ExportCommand.Build(Request(ExportMode.Gpu)));
+                        Console.WriteLine($"  resized {nativeSize.Width}x{nativeSize.Height} -> {size.Value.Width}x{size.Value.Height} on the GPU");
+                        return;
                     }
-                };
-
-                process.Start();
-                // Drain stderr while waiting so a chatty FFmpeg can't fill the pipe and hang.
-                var stderr = process.StandardError.ReadToEndAsync();
-
-                if (!process.WaitForExit(120_000))
-                {
-                    try { process.Kill(); } catch { }
-                    throw new TimeoutException("FFmpeg took too long to save the clip");
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"⚠ GPU resize failed ({ex.Message}); doing it in software instead");
+                        try { File.Delete(outputPath); } catch { }
+                    }
                 }
 
-                if (process.ExitCode != 0)
-                {
-                    throw new Exception($"FFmpeg failed with exit code {process.ExitCode}: {stderr.Result.Trim()}");
-                }
+                RunFfmpeg(ExportCommand.Build(Request(ExportMode.Cpu)));
+                Console.WriteLine($"  resized {nativeSize.Width}x{nativeSize.Height} -> {size.Value.Width}x{size.Value.Height} in software");
             }
             finally
             {
                 try { File.Delete(concatFilePath); } catch { }
+            }
+        }
+
+        /// <summary>Run FFmpeg to completion; throw with its own message if it fails or takes too long.</summary>
+        private static void RunFfmpeg(string arguments)
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "ffmpeg",
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            // Drain stderr while waiting so a chatty FFmpeg can't fill the pipe and hang.
+            var stderr = process.StandardError.ReadToEndAsync();
+
+            if (!process.WaitForExit(180_000))
+            {
+                try { process.Kill(); } catch { }
+                throw new TimeoutException("FFmpeg took too long to save the clip");
+            }
+
+            if (process.ExitCode != 0)
+            {
+                string message = stderr.Result.Trim();
+                throw new Exception($"FFmpeg failed with exit code {process.ExitCode}: {(message.Length > 300 ? message.Substring(0, 300) : message)}");
             }
         }
 
