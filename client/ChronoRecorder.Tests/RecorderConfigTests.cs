@@ -10,35 +10,42 @@ namespace ChronoRecorder.Tests
             => new HotkeyConfig { Name = name, Key = "F8", ClipLengthSeconds = seconds };
 
         [Fact]
-        public void RequiredBuffer_CoversLongestHotkeyPlusSlack()
+        public void RequiredBuffer_IsTheLongestHotkeyPlusSlack()
         {
-            var config = new RecorderConfig
-            {
-                BufferDurationSeconds = 60,
-                Hotkeys = new List<HotkeyConfig> { Hk("a", 30), Hk("b", 120) }
-            };
+            var config = new RecorderConfig { Hotkeys = new List<HotkeyConfig> { Hk("a", 30), Hk("b", 120) } };
 
             Assert.Equal(120 + 2 * RecorderConfig.SegmentSeconds, config.RequiredBufferSeconds);
         }
 
         [Fact]
-        public void RequiredBuffer_HonoursALargerUserSetting()
+        public void RequiredBuffer_FollowsEditsToTheClipLengths()
         {
-            var config = new RecorderConfig
-            {
-                BufferDurationSeconds = 300,
-                Hotkeys = new List<HotkeyConfig> { Hk("a", 30) }
-            };
+            var config = new RecorderConfig { Hotkeys = new List<HotkeyConfig> { Hk("quick", 30), Hk("long", 120) } };
+            int before = config.RequiredBufferSeconds;
 
-            Assert.Equal(300, config.RequiredBufferSeconds);
+            config.Hotkeys[1].ClipLengthSeconds = 300;
+
+            Assert.Equal(before + 180, config.RequiredBufferSeconds);
+            config.Hotkeys[1].ClipLengthSeconds = 10;
+            Assert.Equal(30 + 2 * RecorderConfig.SegmentSeconds, config.RequiredBufferSeconds);   // the quick clip is now the longest
         }
 
         [Fact]
-        public void RequiredBuffer_WithoutHotkeys_FallsBackToTheSetting()
+        public void RequiredBuffer_WithoutHotkeys_IsASmallFloor()
         {
-            var config = new RecorderConfig { BufferDurationSeconds = 120, Hotkeys = null! };
+            var config = new RecorderConfig { Hotkeys = null! };
 
-            Assert.Equal(120, config.RequiredBufferSeconds);
+            Assert.Equal(3 * RecorderConfig.SegmentSeconds, config.RequiredBufferSeconds);
+        }
+
+        [Fact]
+        public void ConfigFilesFromBeforeTheSettingWasRemoved_StillLoad()
+        {
+            string old = "{\"BufferDurationSeconds\": 600, \"Fps\": 90}";
+
+            var config = JsonConvert.DeserializeObject<RecorderConfig>(old)!;
+
+            Assert.Equal(90, config.Fps);
         }
 
         [Fact]

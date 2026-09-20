@@ -612,6 +612,30 @@
             sendMessage('getConfig');
         });
 
+        // Games get launched after Chrono does, so keep the list fresh.
+        setInterval(() => {
+            const select = document.getElementById('app-select');
+            // Rebuilding the options closes an open dropdown, so leave it alone while the user is using it.
+            if (document.activeElement === select) return;
+            sendMessage('getRunningApps');
+        }, 3000);
+
+        // Fill the dropdown. The chosen game stays choosable even when it isn't running right now.
+        function renderAppList() {
+            const select = document.getElementById('app-select');
+            const apps = availableApps.slice();
+            if (selectedApp && selectedApp !== 'display' && !apps.includes(selectedApp)) apps.unshift(selectedApp);
+
+            select.innerHTML = '<option value="">Choose an app...</option>';
+            apps.forEach(app => {
+                const option = document.createElement('option');
+                option.value = app;
+                option.textContent = availableApps.includes(app) ? app : `${app} (not running)`;
+                select.appendChild(option);
+            });
+            select.value = selectedApp || '';
+        }
+
         function sendMessage(action, data = {}) {
             if (window.chrome && window.chrome.webview) {
                 window.chrome.webview.postMessage({ action, ...data });
@@ -724,14 +748,7 @@
                 
                 if (data.action === 'runningApps') {
                     availableApps = data.apps;
-                    const select = document.getElementById('app-select');
-                    select.innerHTML = '<option value="">Choose an app...</option>';
-                    data.apps.forEach(app => {
-                        const option = document.createElement('option');
-                        option.value = app;
-                        option.textContent = app;
-                        select.appendChild(option);
-                    });
+                    renderAppList();
                 }
                 
                 if (data.action === 'statusUpdate') {
@@ -739,14 +756,13 @@
                 }
 
                 if (data.action === 'config') {
+                    const chosen = data.selectedApp;
                     currentMode = data.mode;
-                    selectedApp = data.selectedApp;
                     isRecording = data.enabled;
-                    
-                    selectMode(currentMode);
-                    if (selectedApp) {
-                        document.getElementById('app-select').value = selectedApp;
-                    }
+
+                    selectMode(currentMode);          // this clears the selection...
+                    selectedApp = currentMode === 'Display' ? '' : chosen;   // ...so put the saved one back
+                    renderAppList();
                     
                     if (data.hotkeys && data.hotkeys.length > 0) {
                         updateHotkeysDisplay(data.hotkeys);

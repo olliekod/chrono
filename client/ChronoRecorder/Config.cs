@@ -45,12 +45,10 @@ namespace ChronoRecorder
         /// <summary>Length of each rolling buffer segment written by the recorder.</summary>
         public const int SegmentSeconds = 10;
 
-        /// <summary>Minimum buffer length. The buffer is always at least long enough for the longest hotkey.</summary>
-        public int BufferDurationSeconds { get; set; } = 120;
-
         /// <summary>
-        /// Buffer length actually kept: the user's setting, but never less than the longest hotkey
-        /// plus two segments of slack (one in progress, one for the whole-segment rounding).
+        /// How much footage the buffer keeps. Not a setting: it follows from the hotkeys. The longest clip plus two
+        /// segments of slack (one being written, one for whole-segment rounding), so no hotkey can ever outrun it.
+        /// Edit a clip length and the buffer follows. With no hotkeys there is still a small floor.
         /// </summary>
         [JsonIgnore]
         public int RequiredBufferSeconds
@@ -58,8 +56,7 @@ namespace ChronoRecorder
             get
             {
                 int longest = (Hotkeys != null && Hotkeys.Count > 0) ? Hotkeys.Max(h => h.ClipLengthSeconds) : 0;
-                int needed = longest > 0 ? longest + 2 * SegmentSeconds : 0;
-                return Math.Max(BufferDurationSeconds, needed);
+                return Math.Max(longest, 0) + 2 * SegmentSeconds + (longest > 0 ? 0 : SegmentSeconds);
             }
         }
         public string TempFolder { get; set; } = Path.Combine(Path.GetTempPath(), "Chrono");

@@ -200,7 +200,7 @@ namespace ChronoRecorder
             {
                 if (recorder != null && config.RecorderEnabled)
                 {
-                    SendStatusUpdate(WindowDetector.GetActiveApplicationName(), recorder.IsRecordingActive);
+                    SendStatusUpdate(recorder.TargetName, recorder.IsRecordingActive);
                 }
             };
             statusUpdateTimer.Start();
@@ -385,6 +385,7 @@ namespace ChronoRecorder
                         // instance, so replacing it would leave them running on the old settings.
                         config.CopyFrom(newConfig);
                         ConfigManager.Save(config);
+                        SendConfig();   // the main window shows the hotkeys, so it needs the new ones
                         ConfigSaved?.Invoke();
 
                         // Notify settings page
@@ -499,8 +500,7 @@ namespace ChronoRecorder
             // Listen to recording status changes
             rec.ApplicationChanged += (s, app) =>
             {
-                Console.WriteLine($"WebViewHost: Received app change event: {app}");
-                SendStatusUpdate(app, rec.IsRecordingActive);
+                SendStatusUpdate(rec.TargetName, rec.IsRecordingActive);
             };
             
             // Start polling status

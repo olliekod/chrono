@@ -20,6 +20,41 @@ namespace ChronoRecorder
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+        /// <summary>Does this process name match the (cleaned) name the app list showed for the chosen game?</summary>
+        public static bool NameMatches(string processName, string selected)
+            => !string.IsNullOrWhiteSpace(selected) && CleanApplicationName(processName).Equals(selected, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The main window of the chosen game if it is running, whether or not it has focus; otherwise IntPtr.Zero.
+        /// </summary>
+        public static IntPtr FindApplicationWindow(string selected)
+        {
+            if (string.IsNullOrWhiteSpace(selected)) return IntPtr.Zero;
+
+            var processes = Process.GetProcesses();
+            try
+            {
+                foreach (var process in processes)
+                {
+                    try
+                    {
+                        if (!NameMatches(process.ProcessName, selected)) continue;
+                        if (process.MainWindowHandle != IntPtr.Zero) return process.MainWindowHandle;
+                    }
+                    catch
+                    {
+                        // Some processes can't be inspected (they belong to another user or just exited).
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var process in processes) process.Dispose();
+            }
+
+            return IntPtr.Zero;
+        }
+
         /// <summary>
         /// The window the user is working in right now (IntPtr.Zero if there isn't one).
         /// </summary>

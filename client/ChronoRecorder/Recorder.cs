@@ -119,8 +119,16 @@ namespace ChronoRecorder
         /// The monitor to record: wherever the foreground window is. Recording starts when the tracked game gets
         /// focus, so that is the game's monitor.
         /// </summary>
-        private static MonitorInfo? PickMonitor()
-            => MonitorLocator.ForWindow(WindowDetector.GetForegroundWindowHandle()) ?? MonitorLocator.Primary();
+        private MonitorInfo? PickMonitor()
+        {
+            // The game's own window, not whatever is in front: recording can start while it is tabbed out.
+            IntPtr window = config.Mode == RecorderConfig.RecordingMode.Application
+                ? WindowDetector.FindApplicationWindow(config.SelectedApplication)
+                : IntPtr.Zero;
+
+            if (window == IntPtr.Zero) window = WindowDetector.GetForegroundWindowHandle();
+            return MonitorLocator.ForWindow(window) ?? MonitorLocator.Primary();
+        }
 
         private static Rectangle PrimaryBounds()
             => MonitorLocator.Primary()?.Bounds
@@ -561,38 +569,23 @@ namespace ChronoRecorder
         }
 
         /// <summary>
-        /// Check active application and start/stop recording based on mode
+        /// Runs every second: notice foreground changes, and start or stop recording as the rules say.
         /// </summary>
         private void CheckActiveApplication(object? state)
         {
             try
             {
                 string activeApp = WindowDetector.GetActiveApplicationName();
-                
-                // Check if application changed
+
                 if (activeApp != currentApplication)
                 {
                     currentApplication = activeApp;
                     Console.WriteLine($"🔄 Active app changed to: '{activeApp}'");
                     ApplicationChanged?.Invoke(this, activeApp);
-                    
-                    // Handle recording based on mode
-                    HandleRecordingMode(activeApp);
                 }
-                
-                // Also log comparison for debugging
-                if (config.RecorderEnabled && !string.IsNullOrEmpty(config.SelectedApplication))
-                {
-                    bool matches = activeApp.Equals(config.SelectedApplication, StringComparison.OrdinalIgnoreCase);
-                    if (!matches)
-                    {
-                        Console.WriteLine($"❌ '{activeApp}' != '{config.SelectedApplication}' (not recording)");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"✅ '{activeApp}' == '{config.SelectedApplication}' (should be recording: {isRecording})");
-                    }
-                }
+
+                // Every tick, not only when focus changes: the game may start, or close, while something else is in front.
+                HandleRecordingMode();
             }
             catch (Exception ex)
             {
@@ -601,52 +594,32 @@ namespace ChronoRecorder
         }
 
         /// <summary>
-        /// Start or stop recording based on current mode and active app
+        /// Start or stop recording according to <see cref="RecordingPolicy"/>.
         /// </summary>
-        private void HandleRecordingMode(string activeApp)
+        private void HandleRecordingMode()
         {
-            if (!config.RecorderEnabled)
-            {
-                if (isRecording) 
-                {
-                    Console.WriteLine("Recorder disabled, stopping...");
-                    StopRecording();
-                }
-                return;
-            }
+            bool gameRunning = config.RecorderEnabled
+                && config.Mode == RecorderConfig.RecordingMode.Application
+                && WindowDetector.FindApplicationWindow(config.SelectedApplication) != IntPtr.Zero;
 
-            bool shouldRecord = false;
+            bool shouldRecord = RecordingPolicy.ShouldRecord(config.RecorderEnabled, config.Mode, config.SelectedApplication, gameRunning);
 
-            switch (config.Mode)
-            {
-                case RecorderConfig.RecordingMode.Application:
-                    // Only record when selected app is focused
-                    if (!string.IsNullOrEmpty(config.SelectedApplication))
-                    {
-                        shouldRecord = activeApp.Equals(config.SelectedApplication, StringComparison.OrdinalIgnoreCase);
-                        Console.WriteLine($"Application mode: {activeApp} vs {config.SelectedApplication} = {shouldRecord}");
-                    }
-                    break;
-
-                case RecorderConfig.RecordingMode.Display:
-                    // Always record in display mode
-                    shouldRecord = true;
-                    Console.WriteLine($"Display mode: Always record = true");
-                    break;
-            }
-
-            // Start or stop recording
             if (shouldRecord && !isRecording)
             {
-                Console.WriteLine($"▶️ STARTING RECORDING for: {activeApp}");
+                Console.WriteLine($"▶️ STARTING RECORDING: {TargetName}");
                 StartRecording();
             }
             else if (!shouldRecord && isRecording)
             {
-                Console.WriteLine($"⏹️ STOPPING RECORDING (left: {activeApp})");
+                Console.WriteLine(config.RecorderEnabled ? $"⏹️ STOPPING RECORDING ({TargetName} is not running)" : "⏹️ STOPPING RECORDING (recorder disabled)");
                 StopRecording();
             }
         }
+
+        /// <summary>What is being recorded, for the UI: the chosen game, or "display".</summary>
+        public string TargetName => config.Mode == RecorderConfig.RecordingMode.Application && !string.IsNullOrWhiteSpace(config.SelectedApplication)
+            ? config.SelectedApplication
+            : "display";
 
         /// <summary>
         /// Manually enable/disable recorder (called from UI)
@@ -766,7 +739,7 @@ namespace ChronoRecorder
                 return "DISABLED";
             
             if (isRecording)
-                return $"RECORDING: {currentApplication}";
+                return $"RECORDING: {TargetName}";
             
             return config.Mode switch
             {

@@ -475,12 +475,6 @@
                 </select>
                 <div class="info-text">Auto-detected: <span id="detected-encoder"></span></div>
             </div>
-
-            <div class="form-group">
-                <label>Buffer Duration (seconds)</label>
-                <input type="number" id="buffer" min="60" max="600" step="30">
-                <div class="info-text">Maximum clip length you can save</div>
-            </div>
         </div>
 
         <div class="section">
@@ -608,7 +602,6 @@
             document.getElementById('fps').value = receivedConfig.Fps || 60;
             document.getElementById('bitrate').value = receivedConfig.Bitrate || 8000;
             document.getElementById('encoder').value = receivedConfig.Encoder || 'h264_nvenc';
-            document.getElementById('buffer').value = receivedConfig.BufferDurationSeconds || 120;
             document.getElementById('detected-encoder').textContent = receivedConfig.Encoder || 'Unknown';
 
             renderHotkeys();
@@ -717,7 +710,6 @@
                 Fps: parseInt(document.getElementById('fps').value),
                 Bitrate: parseInt(document.getElementById('bitrate').value),
                 Encoder: document.getElementById('encoder').value,
-                BufferDurationSeconds: parseInt(document.getElementById('buffer').value),
                 Mode: receivedConfig.Mode,
                 RecorderEnabled: receivedConfig.RecorderEnabled,
                 SelectedApplication: receivedConfig.SelectedApplication,
