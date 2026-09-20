@@ -24,6 +24,9 @@ npx wrangler d1 migrations apply chrono --local        # schema for local dev
 npx wrangler dev --port 8799                           # local server
 npx wrangler deploy
 ```
+- Production: `https://your-server.workers.dev`, on the Cloudflare account for the account owner (D1 database `chrono`, R2 bucket `chrono-clips`; their IDs are in `wrangler.jsonc`, and they are not secrets). Schema changes ship with `npx wrangler d1 migrations apply chrono --remote` before `npx wrangler deploy`.
+- The production upload key is in `worker/.prod-upload-key` (git-ignored). Set or rotate it with `npx wrangler secret put UPLOAD_KEY < .prod-upload-key`, and paste the same value into the app's Settings.
+- Cloudflare's bot filter answers `403 error code: 1010` to clients with a default library user-agent (Python's urllib, for one). The app sends `Chrono/1.0`, which passes; give any script a User-Agent too.
 - Local secrets live in `worker/.dev.vars` (git-ignored; needs `UPLOAD_KEY`). In production set it with `npx wrangler secret put UPLOAD_KEY`; never pass secret values on the command line.
 - Use a non-default `--port` for `wrangler dev`: 8787 is often taken, and on Windows two listeners can share a port, so requests silently go to the wrong server.
 - `worker/worker-configuration.d.ts` is generated (`wrangler types`) and git-ignored. Regenerate it after editing `wrangler.jsonc` or adding `src/index.ts`, or the test types break.

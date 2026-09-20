@@ -23,6 +23,6 @@
   ],
 
   "d1_databases": [
-    { "binding": "DB", "database_name": "chrono", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "chrono", "database_id": "2faaae05-534e-4403-ad20-1478864c0659", "migrations_dir": "migrations" }
   ]
 }
