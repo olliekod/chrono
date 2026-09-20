@@ -36,13 +36,44 @@ namespace ChronoRecorder
         [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<HotkeyConfig> Hotkeys { get; set; } = null;
 
+        /// <summary>Length of each rolling buffer segment written by the recorder.</summary>
+        public const int SegmentSeconds = 10;
+
+        /// <summary>Minimum buffer length. The buffer is always at least long enough for the longest hotkey.</summary>
         public int BufferDurationSeconds { get; set; } = 120;
+
+        /// <summary>
+        /// Buffer length actually kept: the user's setting, but never less than the longest hotkey
+        /// plus two segments of slack (one in progress, one for the whole-segment rounding).
+        /// </summary>
+        [JsonIgnore]
+        public int RequiredBufferSeconds
+        {
+            get
+            {
+                int longest = (Hotkeys != null && Hotkeys.Count > 0) ? Hotkeys.Max(h => h.ClipLengthSeconds) : 0;
+                int needed = longest > 0 ? longest + 2 * SegmentSeconds : 0;
+                return Math.Max(BufferDurationSeconds, needed);
+            }
+        }
         public string TempFolder { get; set; } = Path.Combine(Path.GetTempPath(), "Chrono");
         public string OutputFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonVideos), "Chrono");
         public bool AutoUpload { get; set; } = true;
         public bool CopyLinkToClipboard { get; set; } = true;
         public bool ShowNotifications { get; set; } = true;
         public bool SaveLocalCopy { get; set; } = false;
+
+        /// <summary>
+        /// Overwrite this config's values in place. The recorder, hotkey manager and UI all hold this same
+        /// instance, so saving settings must mutate it rather than swap in a new object.
+        /// </summary>
+        public void CopyFrom(RecorderConfig other)
+        {
+            // Round-trip through JSON so new properties are copied without touching this method.
+            // Replace (not Reuse) for the hotkey list so entries are fresh objects, never shared with `other`.
+            var replace = new JsonSerializerSettings { ObjectCreationHandling = ObjectCreationHandling.Replace };
+            JsonConvert.PopulateObject(JsonConvert.SerializeObject(other), this, replace);
+        }
 
         // Method to set default hotkeys
         public void SetDefaultHotkeys()

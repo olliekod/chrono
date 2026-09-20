@@ -27,8 +27,11 @@ Client (run from `client/ChronoRecorder/`):
 ```
 dotnet build
 dotnet run
+dotnet test ../ChronoRecorder.Tests                                  # xUnit, pure logic only
+dotnet test ../ChronoRecorder.Tests --filter "FullyQualifiedName~ClipPlannerTests"   # one class
 ```
-- Requires `ffmpeg` on `PATH` and the Edge WebView2 runtime.
+- Requires `ffmpeg` and `ffprobe` on `PATH` (the full FFmpeg build ships both) and the Edge WebView2 runtime.
+- Tests cover `ClipPlanner`, `EncoderProfile`, `HotkeyParser` and config handling. Anything that spawns FFmpeg or needs a window is verified by hand, so keep new logic in small pure classes where you can.
 - It is an `Exe` that logs heavily with `Console.WriteLine`; run it from a terminal to see the log.
 - `UI/**` is copied to the output dir, so edits to the HTML only take effect after a build/run.
 - User config lives at `%APPDATA%\Chrono\config.json`. Delete it to regenerate defaults (including GPU encoder auto-detection).
@@ -37,20 +40,29 @@ dotnet run
 
 `Program.Main` wires four long-lived objects that all share one `RecorderConfig` instance: `Recorder`, `HotkeyManager`, and the `WebViewHost` form (plus `ConfigManager` for persistence).
 
-**Recording pipeline (`Recorder.cs`).** FFmpeg (`gdigrab` on the whole desktop) records fixed 10-second segments into `TempFolder`. Each segment is a separate FFmpeg process; its `Exited` event queues the segment and starts the next one. `CleanupOldSegments` trims the queue to `BufferDurationSeconds`. `SaveClip` walks segments backwards until it has enough duration, then joins them with the FFmpeg concat demuxer (`-c copy`, no re-encode). The output lands in `TempFolder`, not `OutputFolder`.
+**Recording pipeline (`Recorder.cs`).** FFmpeg (`gdigrab` on the whole desktop) records fixed 10-second MPEG-TS segments into `TempFolder`. Each segment is a separate FFmpeg process; its `Exited` event queues the segment and starts the next one. The queue is guarded by `segmentLock` (FFmpeg exit thread, monitor timer and UI thread all touch it). `CleanupOldSegments` trims it to `RecorderConfig.RequiredBufferSeconds`, which is the larger of the `BufferDurationSeconds` setting and the longest hotkey plus two segments.
+
+**Saving a clip.** `SaveClip` snapshots the finished segments plus the segment still being written, then `ClipPlanner` (pure, unit-tested) picks the newest segments and a seek offset. The segments are joined with the FFmpeg concat demuxer using `-ss` before `-i` and `-c copy`, and written to `OutputFolder` with a timestamped name.
+
+Why it is built this way, since each part was a bug once:
+- Segments are `.ts` with `-flush_packets 1` because an MP4 is unreadable until FFmpeg finishes it. TS can be read mid-write, which is how the newest seconds make it into a clip.
+- The in-progress segment's length is measured with `ffprobe`. Its wall-clock age overstates what is on disk by about 2s (TS mux and NVENC delay).
+- Copy mode can only start on a keyframe and drops everything before the first one at or after `-ss`. So the plan asks for `EncoderProfile.KeyframeIntervalSeconds` of extra footage, and clips come out between N and about N+2s, never shorter. Keyframes are forced by time (`-force_key_frames`), because `-g` counts frames and `gdigrab` drops them.
+- Encoder flags live in `EncoderProfile`: presets are per-encoder (`-preset p4` is NVENC-only).
 
 **When it records.** A 1-second timer polls the foreground process (`WindowDetector`, user32 P/Invoke). In `Application` mode recording starts and stops as the selected app gains and loses focus; in `Display` mode it runs whenever the recorder is enabled. Application mode only gates start/stop; capture is always the full desktop.
 
-**Hotkeys (`HotkeyManager.cs`).** Uses `RegisterHotKey` against a hidden `NativeWindow`. The hotkey ID is the list index + 1. Hotkeys are registered once at startup, so changes made in Settings only apply after restart (the UI tells the user this).
+**Hotkeys (`HotkeyManager.cs`, `HotkeyParser.cs`).** Uses `RegisterHotKey` against a hidden `NativeWindow`; the ID is the list index + 1, and pressed IDs are resolved through a dictionary of what was actually registered. Saving settings raises `WebViewHost.ConfigSaved`, and `Program` responds with `ReloadHotkeys()`, so no restart is needed.
 
 **UI bridge (`WebViewHost.cs` + `UI/*.html`).** Two borderless WebView2 windows (main `index.html`, settings `settings.html`). JS sends `chrome.webview.postMessage({action: ...})`, and the C# `switch` on `action` handles it. C# replies with `PostWebMessageAsJson`, and anything touching the WebView must be marshalled onto the UI thread (`InvokeRequired`). Window dragging is implemented through `startDrag`/`dragWindow`/`stopDrag` messages because the form has no title bar.
 
-**Config (`Config.cs`).** Newtonsoft.Json. `Hotkeys` is deliberately initialised to `null` with `ObjectCreationHandling.Replace`, and defaults are applied by `SetDefaultHotkeys()`. This is the fix for a bug where deserialisation appended saved hotkeys to the default list, duplicating them. Don't give the property an initialiser.
+**Config (`Config.cs`).** Newtonsoft.Json. `Hotkeys` is deliberately initialised to `null` with `ObjectCreationHandling.Replace`, and defaults are applied by `SetDefaultHotkeys()`. This is the fix for a bug where deserialisation appended saved hotkeys to the default list, duplicating them. Don't give the property an initialiser. The config is one shared instance: settings are applied with `RecorderConfig.CopyFrom` (edit in place), never by replacing the object, or the recorder and hotkey manager would keep the old one.
 
 ## Client gotchas
 
-- Saving settings does `this.config = configToSave` inside `WebViewHost` only. `Recorder` and `HotkeyManager` still hold the original config object, so most setting changes need a restart to take effect.
-- `Recorder.BuildFFmpegArgs` hardcodes `-preset p4`, which is an NVENC preset, whatever `Encoder` is set to (`GpuDetector` can choose `h264_amf` / `h264_qsv`).
+- `gdigrab` is CPU-bound and delivered only ~21 fps when asked for 30 at 1280x720 on an RTX 4080 machine. Segments hold real time but fewer frames than the configured fps. Replacing the capture path is planned.
+- Each segment is a new FFmpeg process, so there is a short gap in footage at every segment boundary. A single continuous encode would remove it.
+- No audio is captured yet.
 - Not implemented yet: client-side upload (nothing calls `/upload`, though `AutoUpload`, `ApiUrl`, and `CopyLinkToClipboard` exist in config), the trim UI (`TODO` in `Program.OnHotkeyPressed`), and the library (`openLibrary` is a stub). `SendStatusUpdate()` (no args) sends placeholder buffer text.
 
 ## Backend architecture

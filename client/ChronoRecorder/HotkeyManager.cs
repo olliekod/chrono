@@ -16,15 +16,12 @@ namespace ChronoRecorder
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        // Modifier keys
-        private const uint MOD_NONE = 0x0000;
-        private const uint MOD_ALT = 0x0001;
-        private const uint MOD_CONTROL = 0x0002;
-        private const uint MOD_SHIFT = 0x0004;
-        private const uint MOD_WIN = 0x0008;
-
         private readonly NativeWindow messageWindow;
         private readonly RecorderConfig config;
+
+        // id -> hotkey as registered. The config is edited in place when settings are saved, so a pressed
+        // hotkey is looked up here instead of by index into config.Hotkeys.
+        private readonly Dictionary<int, HotkeyConfig> registered = new Dictionary<int, HotkeyConfig>();
 
         public event EventHandler<HotkeyPressedEventArgs>? HotkeyPressed;
 
@@ -48,15 +45,24 @@ namespace ChronoRecorder
         /// </summary>
         public void RegisterHotkeys()
         {
-            Console.WriteLine($"Registering {config.Hotkeys.Count} hotkeys...");
-            
-            for (int i = 0; i < config.Hotkeys.Count; i++)
+            var hotkeys = config.Hotkeys ?? new List<HotkeyConfig>();
+            Console.WriteLine($"Registering {hotkeys.Count} hotkeys...");
+
+            for (int i = 0; i < hotkeys.Count; i++)
             {
-                var hotkey = config.Hotkeys[i];
-                RegisterHotkey(hotkey, i + 1); // Pass ID explicitly
+                RegisterHotkey(hotkeys[i], i + 1); // Pass ID explicitly
             }
-            
+
             Console.WriteLine($"✓ Registered hotkeys\n");
+        }
+
+        /// <summary>
+        /// Re-read the hotkeys from config (after the settings were saved).
+        /// </summary>
+        public void ReloadHotkeys()
+        {
+            UnregisterAll();
+            RegisterHotkeys();
         }
 
         /// <summary>
@@ -66,13 +72,14 @@ namespace ChronoRecorder
         {
             try
             {
-                uint modifiers = ParseModifiers(hotkey.Modifiers);
-                uint vkCode = ParseKey(hotkey.Key);
+                uint modifiers = HotkeyParser.ParseModifiers(hotkey.Modifiers);
+                uint vkCode = HotkeyParser.ParseKey(hotkey.Key);
 
                 bool success = RegisterHotKey(messageWindow.Handle, id, modifiers, vkCode);
-                
+
                 if (success)
                 {
+                    registered[id] = hotkey;
                     Console.WriteLine($"  ✓ {FormatHotkey(hotkey)} → {hotkey.ClipLengthSeconds}s");
                 }
                 else
@@ -91,91 +98,13 @@ namespace ChronoRecorder
         /// </summary>
         public void UnregisterAll()
         {
-            for (int i = 1; i <= config.Hotkeys.Count; i++)
+            // Unregister what was actually registered; config.Hotkeys may have changed since.
+            foreach (int id in registered.Keys)
             {
-                UnregisterHotKey(messageWindow.Handle, i);
+                UnregisterHotKey(messageWindow.Handle, id);
             }
+            registered.Clear();
             Console.WriteLine("✓ Unregistered all hotkeys");
-        }
-
-        /// <summary>
-        /// Parse modifier keys from config
-        /// </summary>
-        private uint ParseModifiers(System.Collections.Generic.List<string> modifiers)
-        {
-            uint result = MOD_NONE;
-            
-            foreach (var mod in modifiers)
-            {
-                switch (mod.ToLower())
-                {
-                    case "control":
-                    case "ctrl":
-                        result |= MOD_CONTROL;
-                        break;
-                    case "alt":
-                        result |= MOD_ALT;
-                        break;
-                    case "shift":
-                        result |= MOD_SHIFT;
-                        break;
-                    case "win":
-                    case "windows":
-                        result |= MOD_WIN;
-                        break;
-                }
-            }
-            
-            return result;
-        }
-
-        /// <summary>
-        /// Parse key from config to virtual key code
-        /// </summary>
-        private uint ParseKey(string key)
-        {
-            // Function keys
-            if (key.StartsWith("F") && int.TryParse(key.Substring(1), out int fNum))
-            {
-                return (uint)(Keys.F1 + fNum - 1);
-            }
-
-            // Special keys
-            switch (key.ToLower())
-            {
-                case "pageup":
-                case "pgup":
-                    return (uint)Keys.PageUp;
-                case "pagedown":
-                case "pgdn":
-                case "pgdown":
-                    return (uint)Keys.PageDown;
-                case "home":
-                    return (uint)Keys.Home;
-                case "end":
-                    return (uint)Keys.End;
-                case "insert":
-                case "ins":
-                    return (uint)Keys.Insert;
-                case "delete":
-                case "del":
-                    return (uint)Keys.Delete;
-                case "space":
-                    return (uint)Keys.Space;
-                case "enter":
-                case "return":
-                    return (uint)Keys.Enter;
-                default:
-                    // Single character keys
-                    if (key.Length == 1)
-                    {
-                        char c = char.ToUpper(key[0]);
-                        return (uint)c;
-                    }
-                    break;
-            }
-
-            throw new ArgumentException($"Unknown key: {key}");
         }
 
         /// <summary>
@@ -194,11 +123,8 @@ namespace ChronoRecorder
         /// </summary>
         private void OnHotkeyPressed(int id)
         {
-            // ID is 1 based, array is 0 based
-            int index = id - 1;
-            if (index >= 0 && index < config.Hotkeys.Count)
+            if (registered.TryGetValue(id, out var hotkey))
             {
-                var hotkey = config.Hotkeys[index];
                 Console.WriteLine($"\n🔥 HOTKEY: {FormatHotkey(hotkey)} ({hotkey.ClipLengthSeconds}s)");
                 HotkeyPressed?.Invoke(this, new HotkeyPressedEventArgs(hotkey));
             }

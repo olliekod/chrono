@@ -17,6 +17,9 @@ namespace ChronoRecorder
     {
         private WebView2 webView;
         private RecorderConfig config;
+
+        /// <summary>Raised after settings are saved, so hotkeys can be re-registered.</summary>
+        public event Action? ConfigSaved;
         private System.Windows.Forms.Timer? statusUpdateTimer;
 
         private Point dragStartPoint;
@@ -374,50 +377,15 @@ namespace ChronoRecorder
                     if (newConfig != null)
                     {
                         Console.WriteLine($"\n=== RECEIVED CONFIG FROM UI ===");
-                        Console.WriteLine($"New config has {newConfig.Hotkeys.Count} hotkeys");
 
-                        // Create a COMPLETELY NEW config object to avoid any reference issues
-                        var configToSave = new RecorderConfig
-                        {
-                            Username = newConfig.Username,
-                            ApiUrl = newConfig.ApiUrl,
-                            Resolution = newConfig.Resolution,
-                            Fps = newConfig.Fps,
-                            Bitrate = newConfig.Bitrate,
-                            Encoder = newConfig.Encoder,
-                            BufferDurationSeconds = newConfig.BufferDurationSeconds,
-                            Mode = newConfig.Mode,
-                            RecorderEnabled = newConfig.RecorderEnabled,
-                            SelectedApplication = newConfig.SelectedApplication,
-                            MinimumFocusTimeSeconds = newConfig.MinimumFocusTimeSeconds,
-                            TempFolder = newConfig.TempFolder,
-                            OutputFolder = newConfig.OutputFolder,
-                            AutoUpload = newConfig.AutoUpload,
-                            CopyLinkToClipboard = newConfig.CopyLinkToClipboard,
-                            ShowNotifications = newConfig.ShowNotifications,
-                            SaveLocalCopy = newConfig.SaveLocalCopy,
-                            Hotkeys = new List<HotkeyConfig>() // Start with empty list
-                        };
+                        // A missing hotkey list means "leave them alone", not "delete them all".
+                        newConfig.Hotkeys ??= config.Hotkeys;
 
-                        // Add each hotkey as a NEW object
-                        foreach (var hotkey in newConfig.Hotkeys)
-                        {
-                            configToSave.Hotkeys.Add(new HotkeyConfig
-                            {
-                                Name = hotkey.Name,
-                                Key = hotkey.Key,
-                                Modifiers = new List<string>(hotkey.Modifiers),
-                                ClipLengthSeconds = hotkey.ClipLengthSeconds
-                            });
-                        }
-
-                        Console.WriteLine($"Built new config with {configToSave.Hotkeys.Count} hotkeys");
-
-                        // Save to disk
-                        ConfigManager.Save(configToSave);
-
-                        // Update the instance config
-                        this.config = configToSave;
+                        // Edit the live config in place. The recorder and hotkey manager hold this same
+                        // instance, so replacing it would leave them running on the old settings.
+                        config.CopyFrom(newConfig);
+                        ConfigManager.Save(config);
+                        ConfigSaved?.Invoke();
 
                         // Notify settings page
                         var response = new { action = "configSaved" };
@@ -427,7 +395,7 @@ namespace ChronoRecorder
                         // Close settings window
                         settingsForm.Close();
 
-                        MessageBox.Show("Settings saved! Restart Chrono for hotkey changes to take effect.",
+                        MessageBox.Show("Settings saved!",
                             "Settings Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                 }

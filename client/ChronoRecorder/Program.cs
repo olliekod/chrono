@@ -34,6 +34,8 @@ namespace ChronoRecorder
             
             var mainWindow = new WebViewHost(config);
             mainWindow.SetRecorder(recorder);
+            // Settings edit the shared config in place; re-register so new hotkeys work without a restart.
+            mainWindow.ConfigSaved += () => hotkeyManager.ReloadHotkeys();
             
             Application.Run(mainWindow);
             
