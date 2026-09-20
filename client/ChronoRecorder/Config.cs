@@ -15,7 +15,11 @@ namespace ChronoRecorder
     public class RecorderConfig
     {
         public string Username { get; set; } = Environment.UserName;
-        public string ApiUrl { get; set; } = "https://chrono-clips.fly.dev";
+        /// <summary>Address of the clip server (the Worker). Empty until set up in Settings.</summary>
+        public string ApiUrl { get; set; } = "";
+
+        /// <summary>Shared key that lets this app upload. Stored as plain text in the user's config file.</summary>
+        public string UploadKey { get; set; } = "";
         public int Bitrate { get; set; } = 8000;
         public int Fps { get; set; } = 60;
         public string Resolution { get; set; } = "1920x1080";
@@ -75,6 +79,16 @@ namespace ChronoRecorder
             JsonConvert.PopulateObject(JsonConvert.SerializeObject(other), this, replace);
         }
 
+        /// <summary>
+        /// Config files written by older versions may hold values that no longer make sense.
+        /// </summary>
+        public void MigrateLegacyValues()
+        {
+            // The old default pointed at a server nobody here owns; never send clips or keys there.
+            if (ApiUrl != null && ApiUrl.Contains("chrono-clips.fly.dev", StringComparison.OrdinalIgnoreCase))
+                ApiUrl = "";
+        }
+
         // Method to set default hotkeys
         public void SetDefaultHotkeys()
         {
@@ -118,6 +132,7 @@ namespace ChronoRecorder
                     Console.WriteLine($"JSON length: {json.Length} characters");
                     
                     var config = JsonConvert.DeserializeObject<RecorderConfig>(json);
+                    config.MigrateLegacyValues();
                     
                     Console.WriteLine($"Loaded config with {config.Hotkeys.Count} hotkeys:");
                     foreach (var hotkey in config.Hotkeys)

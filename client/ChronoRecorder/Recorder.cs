@@ -306,52 +306,13 @@ namespace ChronoRecorder
             // Measure what is really on disk, outside the lock since it spawns ffprobe.
             if (livePath != null)
             {
-                double live = ProbeDurationSeconds(livePath) ?? liveEstimate;
+                double live = MediaProbe.DurationSeconds(livePath) ?? liveEstimate;
 
                 if (live >= 1)
                     spans.Add(new SegmentSpan(livePath, live));
             }
 
             return spans;
-        }
-
-        /// <summary>
-        /// Real duration of a media file, or null if ffprobe isn't available or can't read it.
-        /// </summary>
-        private static double? ProbeDurationSeconds(string path)
-        {
-            try
-            {
-                using var probe = Process.Start(new ProcessStartInfo
-                {
-                    FileName = "ffprobe",
-                    Arguments = $"-v error -show_entries format=duration -of default=nw=1:nk=1 \"{path}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                });
-
-                if (probe == null) return null;
-
-                var output = probe.StandardOutput.ReadToEndAsync();
-                probe.StandardError.ReadToEndAsync();
-
-                if (!probe.WaitForExit(5000))
-                {
-                    try { probe.Kill(); } catch { }
-                    return null;
-                }
-
-                return double.TryParse(output.Result.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)
-                    ? seconds
-                    : null;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠ Could not probe {Path.GetFileName(path)}: {ex.Message}");
-                return null;
-            }
         }
 
         /// <summary>

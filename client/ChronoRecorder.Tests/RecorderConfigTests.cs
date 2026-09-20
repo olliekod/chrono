@@ -55,6 +55,32 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public void NewConfigs_HaveNoServerAndNoKey()
+        {
+            var config = new RecorderConfig();
+            Assert.Equal("", config.ApiUrl);
+            Assert.Equal("", config.UploadKey);
+        }
+
+        [Theory]
+        [InlineData("https://chrono-clips.fly.dev")]
+        [InlineData("https://CHRONO-CLIPS.FLY.DEV/")]
+        public void MigrateLegacyValues_ClearsTheOldFlyAddress(string old)
+        {
+            var config = new RecorderConfig { ApiUrl = old };
+            config.MigrateLegacyValues();
+            Assert.Equal("", config.ApiUrl);
+        }
+
+        [Fact]
+        public void MigrateLegacyValues_LeavesARealServerAlone()
+        {
+            var config = new RecorderConfig { ApiUrl = "https://clips.example.workers.dev" };
+            config.MigrateLegacyValues();
+            Assert.Equal("https://clips.example.workers.dev", config.ApiUrl);
+        }
+
+        [Fact]
         public void CopyFrom_KeepsTheSameInstance_AndCopiesValues()
         {
             var live = new RecorderConfig { Fps = 30 };

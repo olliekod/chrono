@@ -382,6 +382,8 @@
             right: 30px;
             transform: rotate(-20deg);
         }
+        .check { display: flex; align-items: center; gap: 10px; margin: 10px 0; cursor: pointer; }
+        .check input[type="checkbox"] { width: 18px; height: 18px; flex: none; margin: 0; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -409,6 +411,28 @@
                 <label>Username</label>
                 <input type="text" id="username" placeholder="Your display name">
                 <div class="info-text">Displayed on clips and uploads</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>☁️ Sharing</h2>
+
+            <div class="form-group">
+                <label>Server address</label>
+                <input type="text" id="apiUrl" placeholder="https://chrono-clips.your-name.workers.dev" spellcheck="false" autocomplete="off">
+                <div class="info-text">Where your clips are uploaded. Must start with https://</div>
+            </div>
+
+            <div class="form-group">
+                <label>Upload key</label>
+                <input type="password" id="uploadKey" placeholder="The shared key for your server" spellcheck="false" autocomplete="off">
+                <div class="info-text">Ask whoever runs the server. Stored on this PC only</div>
+            </div>
+
+            <div class="form-group">
+                <label class="check"><input type="checkbox" id="autoUpload"> Upload clips automatically after saving</label>
+                <label class="check"><input type="checkbox" id="copyLink"> Copy the share link to the clipboard</label>
+                <label class="check"><input type="checkbox" id="showNotifications"> Show notifications</label>
             </div>
         </div>
 
@@ -562,6 +586,11 @@
             console.log('Populating form...');
             
             document.getElementById('username').value = receivedConfig.Username || '';
+            document.getElementById('apiUrl').value = receivedConfig.ApiUrl || '';
+            document.getElementById('uploadKey').value = receivedConfig.UploadKey || '';
+            document.getElementById('autoUpload').checked = receivedConfig.AutoUpload !== false;
+            document.getElementById('copyLink').checked = receivedConfig.CopyLinkToClipboard !== false;
+            document.getElementById('showNotifications').checked = receivedConfig.ShowNotifications !== false;
             document.getElementById('resolution').value = receivedConfig.Resolution || '1920x1080';
             document.getElementById('fps').value = receivedConfig.Fps || 60;
             document.getElementById('bitrate').value = receivedConfig.Bitrate || 8000;
@@ -669,7 +698,8 @@
             
             const configToSend = {
                 Username: document.getElementById('username').value,
-                ApiUrl: receivedConfig.ApiUrl,
+                ApiUrl: document.getElementById('apiUrl').value.trim(),
+                UploadKey: document.getElementById('uploadKey').value.trim(),
                 Resolution: document.getElementById('resolution').value,
                 Fps: parseInt(document.getElementById('fps').value),
                 Bitrate: parseInt(document.getElementById('bitrate').value),
@@ -681,9 +711,9 @@
                 MinimumFocusTimeSeconds: receivedConfig.MinimumFocusTimeSeconds,
                 TempFolder: receivedConfig.TempFolder,
                 OutputFolder: receivedConfig.OutputFolder,
-                AutoUpload: receivedConfig.AutoUpload,
-                CopyLinkToClipboard: receivedConfig.CopyLinkToClipboard,
-                ShowNotifications: receivedConfig.ShowNotifications,
+                AutoUpload: document.getElementById('autoUpload').checked,
+                CopyLinkToClipboard: document.getElementById('copyLink').checked,
+                ShowNotifications: document.getElementById('showNotifications').checked,
                 SaveLocalCopy: receivedConfig.SaveLocalCopy,
                 Hotkeys: finalHotkeys
             };
