@@ -48,17 +48,20 @@ dotnet test ../ChronoRecorder.Tests --filter "FullyQualifiedName~ClipPlannerTest
 
 `Program.Main` wires four long-lived objects that all share one `RecorderConfig` instance: `Recorder`, `HotkeyManager`, and the `WebViewHost` form (plus `ConfigManager` for persistence).
 
-**Recording pipeline (`Recorder.cs`).** FFmpeg (`gdigrab` on the whole desktop) records fixed 10-second MPEG-TS segments into `TempFolder`. Each segment is a separate FFmpeg process; its `Exited` event queues the segment and starts the next one. The queue is guarded by `segmentLock` (FFmpeg exit thread, monitor timer and UI thread all touch it). `CleanupOldSegments` trims it to `RecorderConfig.RequiredBufferSeconds`, which is the larger of the `BufferDurationSeconds` setting and the longest hotkey plus two segments.
+**Recording pipeline (`Recorder.cs`, `CaptureCommand.cs`, `SegmentTracker.cs`).** One long-running FFmpeg process captures one monitor and writes rolling 10-second MPEG-TS segments into `TempFolder` (`-f segment`). `CaptureCommand` builds the arguments (pure, unit-tested); `SegmentTracker` reads the folder to tell finished segments from the one being written, and prunes the oldest beyond `RecorderConfig.RequiredBufferSeconds` (the larger of the `BufferDurationSeconds` setting and the longest hotkey plus two segments). Files are named `segment_{run}_{index}.ts`, where `run` is a timestamp taken when recording started. The `Recorder` restarts FFmpeg a few times if a capture drops mid-recording, and reports through `RecordingFailed` when it gives up.
+
+**Which monitor, and how.** `MonitorLocator` lists displays through DXGI (COM interop) and matches the foreground window's `HMONITOR`, so only the game's monitor is recorded, not the whole desktop. `CaptureSourceChooser` then picks the method: **Desktop Duplication** (FFmpeg's `ddagrab`, frames stay on the GPU) when the monitor is on GPU 0 and not rotated, otherwise a **GDI** region grab as a fallback. If `ddagrab` dies within 5 seconds of starting, the recorder falls back to GDI automatically.
+
+**Resolution (`CaptureSizing.cs`).** `"native"` (the default) encodes the monitor as-is with no filters, so nothing leaves the GPU: about 5% of one core at 1440p60 on an RTX 4080. A fixed size such as `"1920x1080"` scales on the CPU (`hwdownload` + `scale`): about 100% of a core. The height picks the quality, the monitor's aspect ratio is kept, and it never upscales. Old configs holding the previous default `"1920x1080"` are migrated to `"native"`.
 
 **Saving a clip.** `SaveClip` snapshots the finished segments plus the segment still being written, then `ClipPlanner` (pure, unit-tested) picks the newest segments and a seek offset. The segments are joined with the FFmpeg concat demuxer using `-ss` before `-i` and `-c copy`, and written to `OutputFolder` with a timestamped name.
 
 Why it is built this way, since each part was a bug once:
-- Segments are `.ts` with `-flush_packets 1` because an MP4 is unreadable until FFmpeg finishes it. TS can be read mid-write, which is how the newest seconds make it into a clip.
+- The old pipeline was `gdigrab` of the whole virtual desktop, restarted as a new FFmpeg process every 10 seconds. On a 2560x1440 + rotated 1440x2560 setup that is a 4000x2560 grab: 134% of a core, ~20 fps delivered instead of 60, and 216 stalls over 40 ms in 12 seconds, which made games hitch. A single `ddagrab` process measured 4.4% of a core, 59 fps, no stalls.
+- Segments are `.ts` with `flush_packets=1` because an MP4 is unreadable until FFmpeg finishes it. TS can be read mid-write, which is how the newest seconds make it into a clip.
 - The in-progress segment's length is measured with `ffprobe`. Its wall-clock age overstates what is on disk by about 2s (TS mux and NVENC delay).
-- Copy mode can only start on a keyframe and drops everything before the first one at or after `-ss`. So the plan asks for `EncoderProfile.KeyframeIntervalSeconds` of extra footage, and clips come out between N and about N+2s, never shorter. Keyframes are forced by time (`-force_key_frames`), because `-g` counts frames and `gdigrab` drops them.
-- Encoder flags live in `EncoderProfile`: presets are per-encoder (`-preset p4` is NVENC-only).
-
-**Sharing (`Uploader.cs`, `UploadRules.cs`, `Notifier.cs`, `Program.ShareAsync`).** After a clip is saved, `Uploader` runs the Worker's protocol: `POST /api/clips` (the server picks the part size), `PUT` each part, `POST .../complete`, and the link comes back. Each part retries on its own (network errors, 5xx, 429); 4xx errors fail at once with the server's message. `UploadRules` decides whether uploading is configured and cleans user input: usernames become `[A-Za-z0-9_-]{1,32}`, and plain `http://` server addresses are refused except on loopback so the upload key never crosses the network in clear text. Results and errors go through `Notifier` (tray balloon tips), not modal dialogs, so nothing pops over a game. The old default server (`chrono-clips.fly.dev`) is treated as unconfigured and cleared from old config files.
+- Copy mode can only start on a keyframe and drops everything before the first one at or after `-ss`. So the plan asks for `EncoderProfile.KeyframeIntervalSeconds` of extra footage, and clips come out between N and about N+2.5s, never shorter. Keyframes are forced by time (`-force_key_frames`), which also makes the segment muxer split on exact 10.000s boundaries.
+- Encoder flags live in `EncoderProfile`: presets are per-encoder (`-preset p4` is NVENC-only). Only NVENC was verified on real hardware; AMF and QSV are untested.
 
 **When it records.** A 1-second timer polls the foreground process (`WindowDetector`, user32 P/Invoke). In `Application` mode recording starts and stops as the selected app gains and loses focus; in `Display` mode it runs whenever the recorder is enabled. Application mode only gates start/stop; capture is always the full desktop.
 
@@ -70,8 +73,9 @@ Why it is built this way, since each part was a bug once:
 
 ## Client gotchas
 
-- `gdigrab` is CPU-bound and delivered only ~21 fps when asked for 30 at 1280x720 on an RTX 4080 machine. Segments hold real time but fewer frames than the configured fps. Replacing the capture path is planned.
-- Each segment is a new FFmpeg process, so there is a short gap in footage at every segment boundary. A single continuous encode would remove it.
+- GPU scaling was tried and doesn't work yet. On the FFmpeg here (2024-07 build) `hwmap` to CUDA is not implemented; on FFmpeg 9.0.2, `scale_d3d11` fails with `Could not create the texture (80070057)`. Scaling therefore stays on the CPU.
+- The user's game monitor is 2560x1440 landscape and the second monitor is a rotated 1440x2560, which Desktop Duplication returns un-rotated, hence the GDI route for rotated monitors. A monitor on a second GPU takes the same route.
+- Recording still stops when the tracked app loses focus (Application mode), so clicking the other monitor pauses the buffer.
 - No audio is captured yet.
 - The settings page (`UI/settings.html`) builds the outgoing config field by field. A new config property that isn't added there is silently reset to its default on every save.
 - `SaveLocalCopy` is not used yet: clips always stay in `OutputFolder`, and nothing is deleted after upload.

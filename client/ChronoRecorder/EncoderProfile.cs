@@ -44,8 +44,7 @@ namespace ChronoRecorder
             return $"-c:v {name} {tuning} " +
                    $"-b:v {bitrateKbps}k -maxrate {bitrateKbps}k -bufsize {bitrateKbps * 2}k " +
                    $"-g {fps * KeyframeIntervalSeconds} " +
-                   $"-force_key_frames \"expr:gte(t,n_forced*{KeyframeIntervalSeconds})\"{idr} " +
-                   $"-pix_fmt yuv420p";
+                   $"-force_key_frames \"expr:gte(t,n_forced*{KeyframeIntervalSeconds})\"{idr}";
         }
     }
 }

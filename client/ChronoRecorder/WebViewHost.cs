@@ -215,7 +215,7 @@ namespace ChronoRecorder
                 status = "Active",
                 buffer = "0:00 / 5:00",
                 username = config.Username,
-                quality = $"{config.Resolution.Split('x')[1]}p{config.Fps}"
+                quality = CaptureSizing.QualityLabel(config.Resolution, config.Fps)
             };
 
             string json = JsonConvert.SerializeObject(status);

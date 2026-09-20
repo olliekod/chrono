@@ -73,6 +73,31 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public void NewConfigs_RecordAtNativeResolution()
+        {
+            Assert.Equal("native", new RecorderConfig().Resolution);
+        }
+
+        [Fact]
+        public void MigrateLegacyValues_MovesTheOldDefaultResolutionToNative()
+        {
+            var config = new RecorderConfig { Resolution = "1920x1080" };
+            config.MigrateLegacyValues();
+            Assert.Equal("native", config.Resolution);
+        }
+
+        [Theory]
+        [InlineData("1280x720")]
+        [InlineData("2560x1440")]
+        [InlineData("native")]
+        public void MigrateLegacyValues_LeavesOtherResolutionChoicesAlone(string chosen)
+        {
+            var config = new RecorderConfig { Resolution = chosen };
+            config.MigrateLegacyValues();
+            Assert.Equal(chosen, config.Resolution);
+        }
+
+        [Fact]
         public void MigrateLegacyValues_LeavesARealServerAlone()
         {
             var config = new RecorderConfig { ApiUrl = "https://clips.example.workers.dev" };

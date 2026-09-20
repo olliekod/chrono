@@ -22,7 +22,9 @@ namespace ChronoRecorder
         public string UploadKey { get; set; } = "";
         public int Bitrate { get; set; } = 8000;
         public int Fps { get; set; } = 60;
-        public string Resolution { get; set; } = "1920x1080";
+        /// <summary>"native" records the monitor as it is (lightest: frames never leave the GPU). A fixed size like
+        /// "1920x1080" scales down on the CPU, which costs roughly a core.</summary>
+        public string Resolution { get; set; } = "native";
         public string Encoder { get; set; } = "auto";
 
         public enum RecordingMode
@@ -87,6 +89,11 @@ namespace ChronoRecorder
             // The old default pointed at a server nobody here owns; never send clips or keys there.
             if (ApiUrl != null && ApiUrl.Contains("chrono-clips.fly.dev", StringComparison.OrdinalIgnoreCase))
                 ApiUrl = "";
+
+            // 1080p used to be the default for everyone, so it says nothing about what anyone chose. Scaling
+            // it now costs about a CPU core while gaming; native costs almost nothing. Anything else is a choice.
+            if (Resolution == "1920x1080")
+                Resolution = "native";
         }
 
         // Method to set default hotkeys

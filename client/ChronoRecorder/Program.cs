@@ -11,6 +11,7 @@ namespace ChronoRecorder
         private static Recorder? recorder;
         private static HotkeyManager? hotkeyManager;
         private static Notifier? notifier;
+        private static Form? uiForm;
         private static readonly Uploader uploader = new Uploader(Uploader.CreateHttpClient());
 
         [STAThread]
@@ -40,7 +41,11 @@ namespace ChronoRecorder
             Console.WriteLine();
 
             var mainWindow = new WebViewHost(config);
+            uiForm = mainWindow;
             mainWindow.SetRecorder(recorder);
+
+            // FFmpeg failures arrive on a worker thread; the tray icon belongs to the UI thread.
+            recorder.RecordingFailed += message => OnUiThread(() => notifier?.Error("Recording problem", message));
             // Settings edit the shared config in place; re-register so new hotkeys work without a restart.
             mainWindow.ConfigSaved += () => hotkeyManager.ReloadHotkeys();
 
@@ -51,6 +56,12 @@ namespace ChronoRecorder
             recorder.StopMonitoring();
             recorder.StopRecording();
             notifier.Dispose();
+        }
+
+        private static void OnUiThread(Action action)
+        {
+            if (uiForm != null && uiForm.IsHandleCreated && uiForm.InvokeRequired) uiForm.BeginInvoke(action);
+            else action();
         }
 
         // async void because this is an event handler. It runs on the UI thread, so every await resumes there,
@@ -106,7 +117,7 @@ namespace ChronoRecorder
 
                 var info = new ClipInfo(
                     await Task.Run(() => MediaProbe.DurationSeconds(clipPath)),
-                    config.Resolution, config.Fps, config.Bitrate);
+                    recorder?.CaptureResolution, config.Fps, config.Bitrate);
 
                 var result = await uploader.UploadAsync(clipPath, settings, info);
                 Console.WriteLine($"✓ Uploaded: {result.Link}");

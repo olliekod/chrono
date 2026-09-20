@@ -1,52 +1,66 @@
 using System;
-using System.Diagnostics;
-using System.IO;
 using System.Collections.Generic;
-using System.Linq;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace ChronoRecorder
 {
     /// <summary>
-    /// handles FFmpeg screen recording with circular buffer
+    /// Records one monitor with a single long-running FFmpeg process that writes rolling segments,
+    /// and saves clips by joining the newest segments.
     /// </summary>
     public class Recorder
     {
         private readonly RecorderConfig config;
+        private readonly SegmentTracker tracker;
+
+        // Everything about the running FFmpeg process is guarded by processLock. FFmpeg's exit event, the monitor
+        // timer and the UI thread (hotkey, buttons) all get here.
+        private readonly object processLock = new object();
         private Process? ffmpegProcess;
-        private bool isRecording = false;
-        // Finished segments, oldest first. Touched from the FFmpeg exit thread, the monitor timer and the
-        // UI thread (hotkey), so every access goes through segmentLock.
-        private readonly Queue<SegmentInfo> segments = new Queue<SegmentInfo>();
-        private readonly object segmentLock = new object();
-        private string currentSegmentPath = "";
-        private DateTime currentSegmentStart;
+        private volatile bool isRecording = false;
+        private string? currentRun;
+        private readonly Queue<DateTime> unexpectedExits = new Queue<DateTime>();
+
         private static int SegmentSeconds => RecorderConfig.SegmentSeconds;
         private string? resolvedEncoder;
 
         private System.Threading.Timer? monitorTimer;
+        private System.Threading.Timer? pruneTimer;
         private string currentApplication = "";
         public event EventHandler<string>? ApplicationChanged;
+
+        /// <summary>Raised when recording stops for a reason the user should hear about. The text is fit to show.</summary>
+        public event Action<string>? RecordingFailed;
+
         public bool IsRecordingActive => isRecording;
 
+        /// <summary>Size of the video being recorded, like "2560x1440". Null until recording has started once.</summary>
+        public string? CaptureResolution { get; private set; }
 
-        public class SegmentInfo
-        {
-            public string FilePath { get; set; } = "";
-            public DateTime CreatedAt { get; set; }
-            public double DurationSeconds { get; set; }
-        }
+        // A monitor change or a game switching resolution can end a Desktop Duplication session. Restart a few
+        // times, but not forever: a crash loop would burn CPU for nothing.
+        private const int MaxUnexpectedExits = 3;
+        private static readonly TimeSpan UnexpectedExitWindow = TimeSpan.FromMinutes(2);
+
+        // A capture that dies this soon after starting never worked (rather than broke midway).
+        private static readonly TimeSpan StartupFailureWindow = TimeSpan.FromSeconds(5);
 
         public Recorder(RecorderConfig config)
         {
             this.config = config;
             Directory.CreateDirectory(config.TempFolder);
             DeleteStaleSegments();
+            tracker = new SegmentTracker(config.TempFolder, SegmentSeconds, MediaProbe.DurationSeconds);
         }
 
         /// <summary>
-        /// Segments left behind by a crashed or killed previous run aren't in the queue, so nothing else would delete them.
+        /// Segments left behind by a previous run of the app would look like footage from just now, so clear them.
         /// </summary>
         private void DeleteStaleSegments()
         {
@@ -64,107 +78,191 @@ namespace ChronoRecorder
         }
 
         /// <summary>
-        /// start recording screen in background
+        /// start recording the game's monitor in the background
         /// </summary>
         public void StartRecording()
         {
-            if (isRecording)
+            lock (processLock)
             {
-                Console.WriteLine("⚠ Already recording");
-                return;
-            }
+                if (isRecording)
+                {
+                    Console.WriteLine("⚠ Already recording");
+                    return;
+                }
 
-            try
-            {
-                // starts segment recording loop
-                isRecording = true;
-                RecordNextSegment();
-                Console.WriteLine("✓ Recording started");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"✗ Failed to start recording: {ex.Message}");
-                isRecording = false;
+                try
+                {
+                    var source = CaptureSourceChooser.Choose(PickMonitor(), PrimaryBounds());
+                    LaunchFfmpeg(source);
+                    Console.WriteLine("✓ Recording started");
+                }
+                catch (Win32Exception)
+                {
+                    isRecording = false;
+                    Console.WriteLine("✗ FFmpeg was not found");
+                    RecordingFailed?.Invoke("FFmpeg wasn't found. Install FFmpeg and make sure it is on your PATH.");
+                }
+                catch (Exception ex)
+                {
+                    isRecording = false;
+                    Console.WriteLine($"✗ Failed to start recording: {ex.Message}");
+                    RecordingFailed?.Invoke($"Couldn't start recording: {ex.Message}");
+                }
             }
         }
+
+        /// <summary>
+        /// The monitor to record: wherever the foreground window is. Recording starts when the tracked game gets
+        /// focus, so that is the game's monitor.
+        /// </summary>
+        private static MonitorInfo? PickMonitor()
+            => MonitorLocator.ForWindow(WindowDetector.GetForegroundWindowHandle()) ?? MonitorLocator.Primary();
+
+        private static Rectangle PrimaryBounds()
+            => MonitorLocator.Primary()?.Bounds
+               ?? System.Windows.Forms.Screen.PrimaryScreen?.Bounds
+               ?? new Rectangle(0, 0, 1920, 1080);
 
         /// <summary>
         /// stop recording
         /// </summary>
         public void StopRecording()
         {
-            // gotta have an off button
-            isRecording = false;
-            
-            if (ffmpegProcess != null && !ffmpegProcess.HasExited)
+            Process? process;
+            lock (processLock)
+            {
+                // Clearing these first tells the exit handler this stop was deliberate.
+                isRecording = false;
+                process = ffmpegProcess;
+                ffmpegProcess = null;
+            }
+
+            if (process != null)
             {
                 try
                 {
-                    ffmpegProcess.StandardInput.WriteLine("q"); // Graceful stop
-                    ffmpegProcess.WaitForExit(3000);
-                    
-                    if (!ffmpegProcess.HasExited)
+                    if (!process.HasExited)
                     {
-                        ffmpegProcess.Kill();
+                        // "q" lets FFmpeg finish and close the segment it is writing.
+                        process.StandardInput.WriteLine("q");
+                        if (!process.WaitForExit(4000)) process.Kill();
                     }
                 }
                 catch { }
-                
-                ffmpegProcess = null;
+                finally
+                {
+                    process.Dispose();
+                }
             }
 
             Console.WriteLine("✓ Recording stopped");
         }
 
         /// <summary>
-        /// record a single segment
+        /// Start FFmpeg on a monitor. Caller holds processLock.
         /// </summary>
-        private void RecordNextSegment()
+        private void LaunchFfmpeg(CaptureSource source)
         {
-            if (!isRecording) return;
-
-            // MPEG-TS, not MP4: an MP4 isn't readable until FFmpeg finishes it (the index is written last),
-            // but a TS file can be read mid-write, which lets a clip include the segment still in progress.
             Directory.CreateDirectory(config.TempFolder);
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
-            string segmentPath = Path.Combine(config.TempFolder, $"segment_{timestamp}.ts");
-            DateTime segmentStart = DateTime.Now;
 
-            lock (segmentLock)
-            {
-                currentSegmentPath = segmentPath;
-                currentSegmentStart = segmentStart;
-            }
+            string run = SegmentTracker.NewRunId();
+            Size output = CaptureSizing.Resolve(config.Resolution, source.Bounds.Size);
 
-            // Build FFmpeg command for screen capture
-            string ffmpegArgs = BuildFFmpegArgs(segmentPath, SegmentSeconds);
+            var request = new CaptureRequest(
+                ResolveEncoder(), config.Fps, config.Bitrate, source, output,
+                SegmentSeconds, SegmentTracker.NamePattern(config.TempFolder, run));
 
-            // Start FFmpeg process
-            ffmpegProcess = new Process
+            Console.WriteLine($"▶ Recording {source.Bounds.Width}x{source.Bounds.Height} monitor at {output.Width}x{output.Height} " +
+                              $"{config.Fps}fps via {source.Method}{(output != source.Bounds.Size ? " (scaled on the CPU)" : "")}");
+
+            var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "ffmpeg",
-                    Arguments = ffmpegArgs,
+                    Arguments = CaptureCommand.Build(request),
                     UseShellExecute = false,
                     RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true
+                },
+                EnableRaisingEvents = true
+            };
+
+            // FFmpeg is quiet at "warning" level, so what it does say is worth keeping for the failure message.
+            var recentErrors = new Queue<string>();
+            process.ErrorDataReceived += (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(e.Data)) return;
+                Console.WriteLine($"[ffmpeg] {e.Data}");
+                lock (recentErrors)
+                {
+                    recentErrors.Enqueue(e.Data);
+                    while (recentErrors.Count > 6) recentErrors.Dequeue();
                 }
             };
 
-            ffmpegProcess.EnableRaisingEvents = true;
-            // Bind the path to this process so a late Exited event can't be attributed to a newer segment.
-            ffmpegProcess.Exited += (s, e) => OnSegmentFinished(segmentPath, segmentStart);
+            DateTime started = DateTime.UtcNow;
+            process.Exited += (s, e) => OnFfmpegExited(process, source, started, recentErrors);
 
-            ffmpegProcess.Start();
+            process.Start();
+            process.BeginErrorReadLine();
 
-            // Read output asynchronously to prevent blocking
-            ffmpegProcess.BeginOutputReadLine();
-            ffmpegProcess.BeginErrorReadLine();
+            ffmpegProcess = process;
+            currentRun = run;
+            CaptureResolution = CaptureSizing.Describe(output);
+            isRecording = true;
         }
-        
+
+        /// <summary>
+        /// FFmpeg ended. If we didn't ask it to, work out whether to retry, fall back, or give up.
+        /// </summary>
+        private void OnFfmpegExited(Process process, CaptureSource source, DateTime started, Queue<string> recentErrors)
+        {
+            string detail;
+            lock (recentErrors) { detail = recentErrors.LastOrDefault() ?? "no details"; }
+
+            lock (processLock)
+            {
+                // Replaced or stopped on purpose: nothing to do.
+                if (!ReferenceEquals(ffmpegProcess, process) || !isRecording) return;
+
+                isRecording = false;
+                ffmpegProcess = null;
+
+                try
+                {
+                    if (DateTime.UtcNow - started < StartupFailureWindow && source.Method == CaptureMethod.DesktopDuplication)
+                    {
+                        // GPU capture never got going (another GPU, an unsupported setup...). GDI is heavier but works.
+                        Console.WriteLine($"⚠ GPU screen capture failed to start ({detail}). Falling back to GDI capture.");
+                        LaunchFfmpeg(source with { Method = CaptureMethod.Gdi });
+                        return;
+                    }
+
+                    var now = DateTime.UtcNow;
+                    unexpectedExits.Enqueue(now);
+                    while (unexpectedExits.Count > 0 && now - unexpectedExits.Peek() > UnexpectedExitWindow)
+                        unexpectedExits.Dequeue();
+
+                    if (DateTime.UtcNow - started >= StartupFailureWindow && unexpectedExits.Count <= MaxUnexpectedExits)
+                    {
+                        // It was working and then the capture dropped (a resolution change, a lock screen...).
+                        Console.WriteLine($"⚠ Capture stopped ({detail}). Restarting.");
+                        LaunchFfmpeg(source);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    detail = ex.Message;
+                }
+            }
+
+            Console.WriteLine($"✗ Recording stopped: {detail}");
+            RecordingFailed?.Invoke($"Recording stopped unexpectedly ({detail}).");
+        }
+
         /// <summary>
         /// Manually start recording (for Display mode)
         /// </summary>
@@ -175,29 +273,6 @@ namespace ChronoRecorder
                 Console.WriteLine("Force starting recording...");
                 StartRecording();
             }
-        }
-
-        /// <summary>
-        /// Build FFmpeg arguments for screen capture
-        /// </summary>
-        private string BuildFFmpegArgs(string outputPath, int duration)
-        {
-            // Parse resolution
-            string[] resParts = config.Resolution.Split('x');
-            string width = resParts[0];
-            string height = resParts[1];
-
-            // gdigrab = built-in Windows screen capture. Encoder flags depend on the encoder (see EncoderProfile).
-            // -flush_packets 1 writes each packet straight to disk so the in-progress segment is readable.
-            string args = $"-hide_banner -nostats -loglevel warning " +
-                         $"-f gdigrab -framerate {config.Fps} -i desktop " +
-                         EncoderProfile.BuildArgs(ResolveEncoder(), config.Bitrate, config.Fps) + " " +
-                         $"-s {width}x{height} " +
-                         $"-flush_packets 1 " +
-                         $"-t {duration} " +
-                         $"-y \"{outputPath}\"";
-
-            return args;
         }
 
         /// <summary>
@@ -215,63 +290,18 @@ namespace ChronoRecorder
         }
 
         /// <summary>
-        /// Called when a segment finishes recording
+        /// Drop the oldest segments beyond the buffer length.
         /// </summary>
-        private void OnSegmentFinished(string segmentPath, DateTime segmentStart)
+        private void PruneBuffer()
         {
-            if (File.Exists(segmentPath))
+            try
             {
-                lock (segmentLock)
-                {
-                    // Add segment to buffer. A segment cut short by StopRecording is shorter than the
-                    // nominal length; the planner only needs a duration close to the truth.
-                    double duration = Math.Min(SegmentSeconds, (DateTime.Now - segmentStart).TotalSeconds);
-
-                    segments.Enqueue(new SegmentInfo
-                    {
-                        FilePath = segmentPath,
-                        CreatedAt = segmentStart,
-                        DurationSeconds = duration
-                    });
-                    Console.WriteLine($"✓ Segment saved: {Path.GetFileName(segmentPath)}");
-
-                    // Clean up old segments (keep only buffer duration)
-                    CleanupOldSegments();
-                }
+                int deleted = tracker.Prune(config.RequiredBufferSeconds, isRecording, currentRun);
+                if (deleted > 0) Console.WriteLine($"Deleted {deleted} old segment(s)");
             }
-
-            // Start next segment if still recording
-            if (isRecording)
+            catch (Exception ex)
             {
-                RecordNextSegment();
-            }
-        }
-
-        /// <summary>
-        /// Remove segments beyond the required buffer length. Caller holds segmentLock.
-        /// </summary>
-        private void CleanupOldSegments()
-        {
-            double totalDuration = segments.Sum(s => s.DurationSeconds);
-            int keepSeconds = config.RequiredBufferSeconds;
-
-            while (totalDuration > keepSeconds && segments.Count > 0)
-            {
-                var oldSegment = segments.Dequeue();
-                totalDuration -= oldSegment.DurationSeconds;
-
-                try
-                {
-                    if (File.Exists(oldSegment.FilePath))
-                    {
-                        File.Delete(oldSegment.FilePath);
-                        Console.WriteLine($"Deleted old segment: {Path.GetFileName(oldSegment.FilePath)}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"⚠ Could not delete {oldSegment.FilePath}: {ex.Message}");
-                }
+                Console.WriteLine($"⚠ Could not prune the buffer: {ex.Message}");
             }
         }
 
@@ -284,37 +314,22 @@ namespace ChronoRecorder
         /// </summary>
         private List<SegmentSpan> SnapshotSpans()
         {
-            List<SegmentSpan> spans;
-            string? livePath = null;
-            double liveEstimate = 0;
+            var scan = tracker.Scan(isRecording, currentRun);
+            var spans = scan.Finished.ToList();
 
-            lock (segmentLock)
+            if (scan.LivePath != null)
             {
-                spans = segments.Select(s => new SegmentSpan(s.FilePath, s.DurationSeconds)).ToList();
-
-                // Skip if it was just queued but currentSegmentPath hasn't moved on to the next segment yet.
-                bool alreadyQueued = spans.Any(s => s.Path == currentSegmentPath);
-
-                if (isRecording && !alreadyQueued && currentSegmentPath != "" && File.Exists(currentSegmentPath))
-                {
-                    livePath = currentSegmentPath;
-                    double elapsed = (DateTime.Now - currentSegmentStart).TotalSeconds;
-                    liveEstimate = Math.Min(SegmentSeconds, elapsed) - LiveSegmentFallbackMarginSeconds;
-                }
-            }
-
-            // Measure what is really on disk, outside the lock since it spawns ffprobe.
-            if (livePath != null)
-            {
-                double live = MediaProbe.DurationSeconds(livePath) ?? liveEstimate;
+                // Measure what is really on disk. Age alone overstates it.
+                double estimate = Math.Min(SegmentSeconds,
+                    (DateTime.Now - File.GetCreationTime(scan.LivePath)).TotalSeconds - LiveSegmentFallbackMarginSeconds);
+                double live = MediaProbe.DurationSeconds(scan.LivePath) ?? estimate;
 
                 if (live >= 1)
-                    spans.Add(new SegmentSpan(livePath, live));
+                    spans.Add(new SegmentSpan(scan.LivePath, live));
             }
 
             return spans;
         }
-
         /// <summary>
         /// Save the last N seconds from the buffer to the output folder
         /// </summary>
@@ -421,10 +436,8 @@ namespace ChronoRecorder
         /// </summary>
         public (int segmentCount, double totalDuration) GetBufferStatus()
         {
-            lock (segmentLock)
-            {
-                return (segments.Count, segments.Sum(s => s.DurationSeconds));
-            }
+            var finished = tracker.Scan(isRecording, currentRun).Finished;
+            return (finished.Count, finished.Sum(s => s.DurationSeconds));
         }
 
         /// <summary>
@@ -444,6 +457,9 @@ namespace ChronoRecorder
             
             // Poll active window every 1 second
             monitorTimer = new System.Threading.Timer(CheckActiveApplication, null, 0, 1000);
+
+            // Old segments are deleted here, off the recording path, every few seconds.
+            pruneTimer = new System.Threading.Timer(_ => PruneBuffer(), null, 5000, 5000);
             
             Console.WriteLine("✓ Timer created - polling every 1 second");
             Console.WriteLine("✓ Application monitoring started");
@@ -456,6 +472,8 @@ namespace ChronoRecorder
         {
             monitorTimer?.Dispose();
             monitorTimer = null;
+            pruneTimer?.Dispose();
+            pruneTimer = null;
             Console.WriteLine("✓ Application monitoring stopped");
         }
 

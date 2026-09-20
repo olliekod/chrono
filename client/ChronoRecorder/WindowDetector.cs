@@ -21,6 +21,11 @@ namespace ChronoRecorder
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
         /// <summary>
+        /// The window the user is working in right now (IntPtr.Zero if there isn't one).
+        /// </summary>
+        public static IntPtr GetForegroundWindowHandle() => GetForegroundWindow();
+
+        /// <summary>
         /// Get the name of the currently active application
         /// </summary>
         public static string GetActiveApplicationName()
