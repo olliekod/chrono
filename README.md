@@ -1,6 +1,6 @@
 # Chrono
 
-Chrono is lightweight clipping software for Windows that shares clips as links, the way Medal does. Press a hotkey to save the last 30 seconds (or whatever length you set), trim it, give it a title, and send a link that plays inside Discord.
+Chrono is lightweight clipping software for Windows that shares clips as links, the way Medal does. Press a hotkey to save the last 30 seconds (or whatever length you set), trim it, give it a title, and send a link anywhere.
 
 - It finds your game on its own. Start a game and recording starts. Browsers, Discord, video players and other apps are left alone.
 - A game is recorded as its own window, so alt-tabbing to Discord or your desktop never puts them in a clip. If you minimize the game, the clip shows its last frame.
