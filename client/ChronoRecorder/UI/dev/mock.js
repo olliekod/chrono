@@ -25,7 +25,7 @@
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
     selectedApplication: '', screen: '2560x1440', fps: 60, clipQuality: '1080p60', audio: 'Game sound and microphone', bufferSeconds: 140,
-    username: 'Oliver', canUpload: true, showDiagnostics: false,
+    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.2',
     hotkeys: [
       { name: 'Quick Clip', keys: ['Control', 'PageUp'], seconds: 30 },
       { name: 'Long Clip', keys: ['Control', 'PageDown'], seconds: 120 },

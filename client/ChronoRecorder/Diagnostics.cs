@@ -281,7 +281,8 @@ namespace ChronoRecorder
         {
             get
             {
-                string? v = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+                // The program's own assembly, so it is right wherever it is hosted (the tests run inside another program).
+                string? v = typeof(DiagnosticsCollector).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
                 return (v ?? "unknown").Split('+')[0];
             }
         }

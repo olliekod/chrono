@@ -5,7 +5,7 @@
 
   const pages = {};
   const state = { status: null, current: null, counts: {} };
-  let content, navButtons = {}, statusParts = {}, brandMark;
+  let content, navButtons = {}, statusParts = {}, brandMark, versionLabel;
 
   Chrono.register = (name, page) => { pages[name] = page; };
   Chrono.state = state;
@@ -33,6 +33,7 @@
     app.textContent = '';
 
     brandMark = h('span', { class: 'brand-mark' }, h('img', { src: 'img/logo.png', alt: '' }));
+    versionLabel = h('span', { class: 'version', title: 'Chrono version' });
     const navItems = [
       ['library', 'Library', 'library'],
       ['recording', 'Recording', 'record'],
@@ -62,7 +63,7 @@
     toastHost = h('div', { class: 'toasts', 'aria-live': 'polite' });
 
     app.append(
-      h('aside', { class: 'sidebar' }, h('div', { class: 'brand' }, brandMark, h('span', { text: 'Chrono' })), nav, statusPanel),
+      h('aside', { class: 'sidebar' }, h('div', { class: 'brand' }, brandMark, h('span', { text: 'Chrono' }), versionLabel), nav, statusPanel),
       content, toastHost);
   }
 
@@ -94,6 +95,7 @@
     const s = state.status;
     if (!s) return;
     if (navButtons.diagnostics) navButtons.diagnostics.button.hidden = !s.showDiagnostics;
+    versionLabel.textContent = s.version ? `v${s.version}` : '';
     statusParts.avatar.querySelector('.initial').textContent = (s.username || 'C').trim().charAt(0).toUpperCase() || 'C';
     statusParts.avatar.querySelector('.dot').className = `dot ${s.state}`;
     statusParts.name.textContent = s.username || 'Chrono';

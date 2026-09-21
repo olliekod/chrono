@@ -567,6 +567,15 @@ namespace ChronoRecorder.Tests
         // ------------------------------------------------ showing and hiding the Diagnostics page
 
         [Fact]
+        public async Task TheStatus_CarriesTheProgramVersion_ForTheTopLeftOfTheWindow()
+        {
+            string version = (string)(await Ok("getStatus"))["version"]!;
+
+            Assert.Matches(@"^\d+\.\d+\.\d+$", version);   // "1.1.2", with no build hash on the end
+            Assert.Equal(DiagnosticsCollector.AppVersion, version);
+        }
+
+        [Fact]
         public async Task Diagnostics_IsHiddenUntilItIsTurnedOn()
         {
             Assert.False(new RecorderConfig().ShowDiagnostics);                                   // a new install
