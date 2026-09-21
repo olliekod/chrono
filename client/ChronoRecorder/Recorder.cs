@@ -134,6 +134,13 @@ namespace ChronoRecorder
             return MonitorLocator.ForWindow(window) ?? MonitorLocator.Primary();
         }
 
+        /// <summary>The size that is (or is about to be) recorded: the monitor being captured, else the one the game is on.</summary>
+        public Size RecordingSize()
+        {
+            if (nativeSize.Width > 0 && nativeSize.Height > 0) return nativeSize;
+            return PickMonitor()?.Bounds.Size ?? PrimaryBounds().Size;
+        }
+
         private static Rectangle PrimaryBounds()
             => MonitorLocator.Primary()?.Bounds
                ?? System.Windows.Forms.Screen.PrimaryScreen?.Bounds

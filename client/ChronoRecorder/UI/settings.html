@@ -452,7 +452,7 @@
 
             <div class="form-group">
                 <label>Frame Rate (FPS)</label>
-                <select id="fps">
+                <select id="fps" onchange="requestRecommendedBitrate()">
                     <option value="30">30 FPS</option>
                     <option value="60">60 FPS</option>
                     <option value="120">120 FPS</option>
@@ -462,8 +462,8 @@
 
             <div class="form-group">
                 <label>Bitrate (kbps)</label>
-                <input type="number" id="bitrate" min="0" max="80000" step="1000" placeholder="0 = automatic">
-                <div class="info-text">0 = automatic (recommended): scales with your screen size and FPS, about 20000 for 1440p60. Higher = sharper video, larger files.</div>
+                <input type="number" id="bitrate" min="1000" max="80000" step="500">
+                <div class="info-text" id="bitrate-info">Recommended: working it out...</div>
             </div>
 
             <div class="form-group">
@@ -574,6 +574,13 @@
                     populateForm();
                 }
 
+                if (data.action === 'recommendedBitrate') {
+                    const input = document.getElementById('bitrate');
+                    input.placeholder = `${data.kbps} (recommended)`;
+                    document.getElementById('bitrate-info').textContent =
+                        `Recommended: ${data.kbps} kbps for your ${data.size} screen at ${data.fps} FPS. Leave this empty to use it, or type a number. Higher = sharper video and bigger files.`;
+                }
+
                 if (data.action === 'configSaved') {
                     console.log('Config saved successfully!');
                     alert('Settings saved successfully!');
@@ -581,6 +588,10 @@
                     
                 }
             });
+        }
+
+        function requestRecommendedBitrate() {
+            sendMessage('recommendedBitrate', { fps: parseInt(document.getElementById('fps').value) || 60 });
         }
 
         function populateForm() {
@@ -601,7 +612,8 @@
             document.getElementById('recordMic').checked = receivedConfig.RecordMicrophone === true;
             document.getElementById('resolution').value = receivedConfig.Resolution || '1920x1080';
             document.getElementById('fps').value = receivedConfig.Fps || 60;
-            document.getElementById('bitrate').value = receivedConfig.Bitrate || 0;
+            document.getElementById('bitrate').value = receivedConfig.Bitrate > 0 ? receivedConfig.Bitrate : '';
+            requestRecommendedBitrate();
             document.getElementById('encoder').value = receivedConfig.Encoder || 'h264_nvenc';
             document.getElementById('detected-encoder').textContent = receivedConfig.Encoder || 'Unknown';
 
@@ -709,7 +721,7 @@
                 UploadKey: document.getElementById('uploadKey').value.trim(),
                 Resolution: document.getElementById('resolution').value,
                 Fps: parseInt(document.getElementById('fps').value),
-                Bitrate: parseInt(document.getElementById('bitrate').value) || 0,
+                Bitrate: parseInt(document.getElementById('bitrate').value) || 0,   // empty = use the recommended value
                 Encoder: document.getElementById('encoder').value,
                 Mode: receivedConfig.Mode,
                 RecorderEnabled: receivedConfig.RecorderEnabled,

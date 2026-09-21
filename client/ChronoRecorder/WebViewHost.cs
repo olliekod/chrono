@@ -371,6 +371,20 @@ namespace ChronoRecorder
                     string responseJson = JsonConvert.SerializeObject(response);
                     settingsWebView.CoreWebView2.PostWebMessageAsJson(responseJson);
                 }
+                else if (action == "recommendedBitrate")
+                {
+                    // The bitrate Chrono uses when the field is left empty, for the screen that will be recorded.
+                    int fps = message["fps"]?.ToObject<int>() ?? config.Fps;
+                    var size = recorder?.RecordingSize() ?? System.Windows.Forms.Screen.PrimaryScreen?.Bounds.Size ?? new System.Drawing.Size(1920, 1080);
+                    var response = new
+                    {
+                        action = "recommendedBitrate",
+                        kbps = BitrateSizing.Resolve(0, size, fps),
+                        size = CaptureSizing.Describe(size),
+                        fps
+                    };
+                    settingsWebView.CoreWebView2.PostWebMessageAsJson(JsonConvert.SerializeObject(response));
+                }
                 else if (action == "saveConfig")
                 {
                     var newConfig = message["config"]?.ToObject<RecorderConfig>();
