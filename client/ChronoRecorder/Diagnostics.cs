@@ -352,7 +352,7 @@ namespace ChronoRecorder
                     : "none"),
                 new("Bitrate", facts.Recording ? $"{DiagnosticsText.Mbps(facts.BitrateKbps)} target" + (stats != null && stats.BitrateKbps > 0 ? $", {DiagnosticsText.Mbps(stats.BitrateKbps)} measured" : "") : "none"),
                 new("Buffer", facts.Recording ? DiagnosticsText.Span(facts.BufferSeconds) : "none"),
-                new("Load", $"{LoadPlan.Describe(facts.LoadLevel, facts.ConfiguredFps, LoadPlan.HasPresetStep(facts.Encoder))}{(facts.LoadSetting == "auto" ? " (automatic)" : $" ({facts.LoadSetting})")}"),
+                new("Load", $"{LoadPlan.Describe(facts.LoadLevel, facts.ConfiguredFps, LoadPlan.HasPresetStep(facts.Encoder))}{(LoadPlan.IsAutomatic(facts.LoadSetting) ? " (automatic)" : $" ({facts.LoadSetting})")}"),
             };
 
             var performance = new List<DiagRow>

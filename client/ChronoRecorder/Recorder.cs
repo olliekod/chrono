@@ -66,6 +66,7 @@ namespace ChronoRecorder
         // Chosen when a recording starts, and moved down by the governor if this PC can't keep up.
         private int loadLevel;
         private LoadGovernor? governor;
+        private bool suggestedLowerFps;   // the "can't keep up at this frame rate" warning is shown once until settings change
 
         // What the Diagnostics page shows about the recording in progress.
         private CaptureSource? currentSource;
@@ -413,7 +414,7 @@ namespace ChronoRecorder
 
             // A fixed setting decides the step outright. "Automatic" begins where the card and earlier runs say, and only ever
             // moves down within a session: coming back up would lose footage to try, and the governor found this step for a reason.
-            bool automatic = string.Equals(config.EncoderLoad, "auto", StringComparison.OrdinalIgnoreCase);
+            bool automatic = LoadPlan.IsAutomatic(config.EncoderLoad);
             string encoder = ResolveEncoder();
             int startLevel = LoadPlan.StartLevel(config.EncoderLoad, CardTier, config.LearnedLoadLevel, config.Fps, LoadPlan.HasPresetStep(encoder));
             loadLevel = automatic ? Math.Max(loadLevel, startLevel) : startLevel;
@@ -581,8 +582,19 @@ namespace ChronoRecorder
             if (watching == null) return;
 
             bool presetStep = LoadPlan.HasPresetStep(ResolveEncoder());
-            int highest = LoadPlan.HighestUsefulLevel(config.Fps, presetStep);
-            if (!watching.ShouldStepDown(stats, started, loadLevel, highest, out string reason)) return;
+            int highest = LoadPlan.HighestUsefulLevel(config.Fps, presetStep, LoadPlan.MayLowerFrameRate(config.EncoderLoad));
+            if (!watching.ShouldStepDown(stats, started, loadLevel, highest, out string reason))
+            {
+                // Out of steps the governor may take, but still behind: the frame rate is the user's setting, so say so once.
+                if (loadLevel >= highest && config.Fps > 30 && !suggestedLowerFps && watching.IsBehindAtTheLimit(stats, started))
+                {
+                    suggestedLowerFps = true;
+                    string text = $"This PC can't keep up with recording at {config.Fps} FPS ({stats.Speed:0.00}x real time), so frames are being lost. Choose 30 FPS under Frame rate in Settings, or set Recording load to \"Automatic, and lower the frame rate if needed\".";
+                    Note("⚠ " + text);
+                    Warning?.Invoke(text);
+                }
+                return;
+            }
 
             StepDownLoad(reason);
         }
@@ -771,6 +783,7 @@ namespace ChronoRecorder
 
             // Settings changed, so what "automatic" learned about the old ones no longer applies.
             loadLevel = 0;
+            suggestedLowerFps = false;
             encoderFailed = false;
             encoderNote = GpuDetector.ProbeNote;
             if (config.LearnedLoadLevel != 0)

@@ -23,9 +23,18 @@ namespace ChronoRecorder
         /// </summary>
         public static bool HasPresetStep(string? encoder) => EncoderProfile.Normalize(encoder) == "h264_nvenc";
 
-        /// <summary>The highest step that changes anything: at 30 FPS or less the frame-rate step has nothing left to lower.</summary>
-        public static int HighestUsefulLevel(int configuredFps, bool presetStep = true)
-            => configuredFps > 30 ? MaxLevel : presetStep ? 1 : 0;
+        /// <summary>
+        /// The highest step the governor may take. The frame rate is the user's to change, so it is only lowered when they
+        /// chose "autofps"; at 30 FPS or less there is nothing left to lower anyway.
+        /// </summary>
+        public static int HighestUsefulLevel(int configuredFps, bool presetStep = true, bool allowFrameRate = false)
+            => allowFrameRate && configuredFps > 30 ? MaxLevel : presetStep ? 1 : 0;
+
+        /// <summary>"auto" and "autofps" both let the governor move the recording down; only "autofps" may lower the frame rate.</summary>
+        public static bool IsAutomatic(string? setting)
+            => string.Equals(setting, "auto", StringComparison.OrdinalIgnoreCase) || string.Equals(setting, "autofps", StringComparison.OrdinalIgnoreCase);
+
+        public static bool MayLowerFrameRate(string? setting) => string.Equals(setting, "autofps", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>The step after this one: the preset, then the frame rate; straight to the frame rate when there is no preset to lower.</summary>
         public static int NextLevel(int level, bool presetStep)
@@ -41,8 +50,8 @@ namespace ChronoRecorder
         }
 
         /// <summary>
-        /// The step to begin a recording at. "normal" and "light" are fixed on purpose; "auto" starts as low as the
-        /// graphics card deserves (or as low as an earlier run found it needed) and is moved by <see cref="LoadGovernor"/>.
+        /// The step to begin a recording at. "normal" and "light" are fixed on purpose; "auto" and "autofps" start as low as
+        /// the graphics card deserves (or as low as an earlier run found it needed) and are moved by <see cref="LoadGovernor"/>.
         /// </summary>
         public static int StartLevel(string? setting, GpuDetector.GpuTier tier, int learned, int configuredFps, bool presetStep = true)
         {
@@ -54,7 +63,7 @@ namespace ChronoRecorder
                 // next step costs half the frame rate, which is only worth taking once this PC has shown it needs to.
                 _ => Math.Max(learned, tier == GpuDetector.GpuTier.Modest && presetStep ? 1 : 0)
             };
-            return Math.Clamp(level, 0, HighestUsefulLevel(configuredFps, presetStep));
+            return Math.Clamp(level, 0, HighestUsefulLevel(configuredFps, presetStep, MayLowerFrameRate(setting)));
         }
     }
 
@@ -75,6 +84,7 @@ namespace ChronoRecorder
         public static readonly TimeSpan Warmup = TimeSpan.FromSeconds(12);
 
         private int behind;
+        private int behindAtLimit;
 
         /// <summary>True (once per run of bad readings) when this report means the recording should move down a step.</summary>
         public bool ShouldStepDown(EncodeStats stats, DateTime startedUtc, int currentLevel, int highestLevel, out string reason)
@@ -98,6 +108,19 @@ namespace ChronoRecorder
             return true;
         }
 
-        public void Reset() => behind = 0;
+        /// <summary>
+        /// True (once per run of bad readings) when the recording is behind and the governor has no step left it may take,
+        /// so the only remedy is one the user has to choose, such as a lower frame rate.
+        /// </summary>
+        public bool IsBehindAtTheLimit(EncodeStats stats, DateTime startedUtc)
+        {
+            if (stats.AtUtc - startedUtc < Warmup || stats.Speed <= 0) return false;
+            if (stats.Speed >= BehindBelow) { behindAtLimit = 0; return false; }
+            if (++behindAtLimit < BehindReports) return false;
+            behindAtLimit = 0;
+            return true;
+        }
+
+        public void Reset() { behind = 0; behindAtLimit = 0; }
     }
 }

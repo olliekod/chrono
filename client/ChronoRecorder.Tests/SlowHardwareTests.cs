@@ -230,9 +230,9 @@ namespace ChronoRecorder.Tests
         [Fact]
         public void ThereIsNothingLeftToLower_WhenTheFrameRateIsAlreadyThirty()
         {
-            Assert.Equal(2, LoadPlan.HighestUsefulLevel(60));
-            Assert.Equal(1, LoadPlan.HighestUsefulLevel(30));
-            Assert.Equal(1, LoadPlan.HighestUsefulLevel(24));
+            Assert.Equal(2, LoadPlan.HighestUsefulLevel(60, allowFrameRate: true));
+            Assert.Equal(1, LoadPlan.HighestUsefulLevel(30, allowFrameRate: true));
+            Assert.Equal(1, LoadPlan.HighestUsefulLevel(24, allowFrameRate: true));
         }
 
         [Theory]
@@ -260,14 +260,15 @@ namespace ChronoRecorder.Tests
         [Fact]
         public void WithoutAPresetStep_ThereIsNothingToLower_AtThirtyFps()
         {
-            Assert.Equal(2, LoadPlan.HighestUsefulLevel(60, presetStep: false));
-            Assert.Equal(0, LoadPlan.HighestUsefulLevel(30, presetStep: false));
+            Assert.Equal(2, LoadPlan.HighestUsefulLevel(60, presetStep: false, allowFrameRate: true));
+            Assert.Equal(0, LoadPlan.HighestUsefulLevel(30, presetStep: false, allowFrameRate: true));
         }
 
         [Theory]
         [InlineData("auto", GpuDetector.GpuTier.Modest, 0, 0)]    // no lighter preset to start on, so a modest AMD or Intel card starts normal
         [InlineData("light", GpuDetector.GpuTier.Capable, 0, 0)]  // "light" can't mean anything here
-        [InlineData("auto", GpuDetector.GpuTier.Capable, 2, 2)]   // but what an earlier run learned still applies
+        [InlineData("autofps", GpuDetector.GpuTier.Capable, 2, 2)]   // but what an earlier run learned still applies
+        [InlineData("auto", GpuDetector.GpuTier.Capable, 2, 0)]      // unless it lowered the frame rate, which plain "auto" no longer does
         public void WhereARecordingStarts_WithoutALighterPreset(string setting, GpuDetector.GpuTier tier, int learned, int expected)
         {
             Assert.Equal(expected, LoadPlan.StartLevel(setting, tier, learned, configuredFps: 60, presetStep: false));
@@ -278,18 +279,42 @@ namespace ChronoRecorder.Tests
         [InlineData("light", GpuDetector.GpuTier.Capable, 0, 1)]
         [InlineData("auto", GpuDetector.GpuTier.Capable, 0, 0)]      // a strong card starts at normal
         [InlineData("auto", GpuDetector.GpuTier.Modest, 0, 1)]       // a modest one starts light
-        [InlineData("auto", GpuDetector.GpuTier.Capable, 2, 2)]      // and an earlier run's finding wins over the guess
-        [InlineData("auto", GpuDetector.GpuTier.Modest, 2, 2)]
+        [InlineData("autofps", GpuDetector.GpuTier.Capable, 2, 2)]   // and an earlier run's finding wins over the guess
+        [InlineData("autofps", GpuDetector.GpuTier.Modest, 2, 2)]
+        [InlineData("auto", GpuDetector.GpuTier.Capable, 2, 1)]      // plain "auto" keeps the frame rate, even if an older version learned to lower it
+        [InlineData("auto", GpuDetector.GpuTier.Modest, 2, 1)]
         [InlineData(null, GpuDetector.GpuTier.Capable, 0, 0)]
         public void WhereARecordingStarts(string? setting, GpuDetector.GpuTier tier, int learned, int expected)
         {
             Assert.Equal(expected, LoadPlan.StartLevel(setting, tier, learned, configuredFps: 60));
         }
 
+        [Theory]
+        [InlineData("auto", false)]
+        [InlineData("AUTO", false)]
+        [InlineData("autofps", true)]
+        [InlineData("normal", false)]
+        [InlineData("light", false)]
+        [InlineData(null, false)]
+        public void OnlyAutofps_MayLowerTheFrameRate(string? setting, bool expected)
+        {
+            Assert.Equal(expected, LoadPlan.MayLowerFrameRate(setting));
+        }
+
+        [Theory]
+        [InlineData("auto", true)]
+        [InlineData("autofps", true)]
+        [InlineData("normal", false)]
+        [InlineData("light", false)]
+        public void OnlyTheAutomaticSettings_LetTheGovernorMoveTheRecording(string setting, bool expected)
+        {
+            Assert.Equal(expected, LoadPlan.IsAutomatic(setting));
+        }
+
         [Fact]
         public void AtThirtyFps_TheStartIsNeverAboveTheLastUsefulStep()
         {
-            Assert.Equal(1, LoadPlan.StartLevel("auto", GpuDetector.GpuTier.Modest, learned: 2, configuredFps: 30));
+            Assert.Equal(1, LoadPlan.StartLevel("autofps", GpuDetector.GpuTier.Modest, learned: 2, configuredFps: 30));
         }
 
         [Fact]
@@ -319,6 +344,24 @@ namespace ChronoRecorder.Tests
 
         private static bool Step(LoadGovernor g, double secondsIn, double speed, int level = 0, int highest = 2)
             => g.ShouldStepDown(Report(secondsIn, speed), Start, level, highest, out _);
+
+        [Fact]
+        public void BehindWithNoStepLeft_IsReportedOncePerRun_SoTheUserCanChooseALowerFrameRate()
+        {
+            var g = new LoadGovernor();
+            var said = new List<bool>();
+            for (int i = 0; i < 10; i++) said.Add(g.IsBehindAtTheLimit(Report(20 + i * 2, 0.76), Start));
+
+            Assert.Equal(new[] { false, false, false, false, true, false, false, false, false, true }, said);
+        }
+
+        [Fact]
+        public void BehindWithNoStepLeft_IsNotReported_DuringWarmUpOrWhenKeepingUp()
+        {
+            var g = new LoadGovernor();
+            for (int i = 0; i < 5; i++) Assert.False(g.IsBehindAtTheLimit(Report(2 + i * 2, 0.5), Start));   // still starting up
+            for (int i = 0; i < 20; i++) Assert.False(g.IsBehindAtTheLimit(Report(30 + i * 2, 1.0), Start));
+        }
 
         [Fact]
         public void ARecordingThatKeepsUp_IsLeftAlone()

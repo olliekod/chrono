@@ -83,9 +83,9 @@
       ], (v) => { config.GameCapture = v; }),
         "Automatic records the game's own window on Windows 11, which means nothing else can ever end up in a clip, even if you alt-tab or minimize the game. Windows 10 draws a yellow border around a window that is being captured, so there Chrono records the monitor instead, only while the game is in front, and pauses when you alt-tab. Only pick Monitor if a game records as a black picture."),
       field('Recording load', select(config.EncoderLoad || 'auto', [
-        ['auto', 'Automatic (recommended)'], ['normal', 'Normal'], ['light', 'Light'],
+        ['auto', 'Automatic (recommended)'], ['autofps', 'Automatic, and lower the frame rate if needed'], ['normal', 'Normal'], ['light', 'Light'],
       ], (v) => { config.EncoderLoad = v; }),
-        'Automatic starts lighter on modest graphics cards and, if this PC ever can\'t keep up, lowers itself by using a faster encoder setting and then 30 FPS. It tells you when it does. Choose Normal or Light to fix it yourself. Light uses a faster encoder setting with almost the same picture.'),
+        'Automatic starts lighter on modest graphics cards and, if this PC ever can\'t keep up, switches to a faster encoder setting. It never changes your frame rate. If the frame rate is still too high for this PC it tells you, and you can pick the option that also lowers it to 30 FPS. Normal and Light stay as chosen. Light uses a faster encoder setting with almost the same picture.'),
       field('Encoder', select(config.Encoder || 'auto', [
         ['auto', 'Automatic (best for this PC)'], ['h264_nvenc', 'NVIDIA graphics card'], ['h264_amf', 'AMD graphics card'], ['h264_qsv', 'Intel graphics'], ['libx264', 'Processor (slow)'],
       ], (v) => { config.Encoder = v; }), 'Leave this on Automatic unless clips fail to save. Recording on your processor is much heavier on the game.'),

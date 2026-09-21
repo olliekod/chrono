@@ -14,7 +14,7 @@ namespace ChronoRecorder
         public const int MinClipSeconds = 5;
         public const int MaxClipSeconds = 600;
         private static readonly string[] Encoders = { "auto", "h264_nvenc", "h264_amf", "h264_qsv", "libx264" };
-        private static readonly string[] EncoderLoads = { "auto", "normal", "light" };
+        private static readonly string[] EncoderLoads = { "auto", "autofps", "normal", "light" };
 
         /// <summary>Tidies the values that can be tidied (trimming, name length) and returns a message for the first thing wrong, or null.</summary>
         public static string? ValidateAndTidy(RecorderConfig c)

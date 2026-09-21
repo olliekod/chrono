@@ -366,7 +366,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   [...doc.querySelectorAll('.settings-nav button')].find((b) => /Recording/.test(b.textContent)).click();
   await until(() => doc.querySelector('select[aria-label="Recording load"]'), 'the recording load setting');
   const loadSelect = doc.querySelector('select[aria-label="Recording load"]');
-  check('recording load offers automatic, normal and light, automatic first', [...loadSelect.options].map((o) => o.value).join() === 'auto,normal,light' && loadSelect.value === 'auto');
+  check('recording load offers automatic, automatic with a lower frame rate, normal and light, automatic first', [...loadSelect.options].map((o) => o.value).join() === 'auto,autofps,normal,light' && loadSelect.value === 'auto');
   loadSelect.value = 'light'; loadSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
   [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
   await until(() => /Recording settings applied/.test(doc.querySelector('.toasts').textContent), 'recording settings applied toast');
@@ -374,7 +374,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
 
   // ------------------------------------------------------------------ diagnostics
   const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
-  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.2' && /Chrono/.test(doc.querySelector('.brand').textContent));
+  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.3' && /Chrono/.test(doc.querySelector('.brand').textContent));
   check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
   [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
   await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');

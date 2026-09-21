@@ -31,8 +31,9 @@ namespace ChronoRecorder
         public string Encoder { get; set; } = "auto";
 
         /// <summary>
-        /// How hard recording works the graphics card: "auto" (default: lighter for modest cards, and steps down by itself
-        /// if the PC can't keep up), "normal" or "light" (both fixed). See <see cref="LoadPlan"/>.
+        /// How hard recording works the graphics card: "auto" (default: lighter for modest cards, and a faster encoder
+        /// setting if the PC can't keep up; the frame rate stays as set), "autofps" (the same, and it may also drop to
+        /// 30 FPS), "normal" or "light" (both fixed). See <see cref="LoadPlan"/>.
         /// </summary>
         public string EncoderLoad { get; set; } = "auto";
 
