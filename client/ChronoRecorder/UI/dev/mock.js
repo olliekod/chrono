@@ -40,7 +40,7 @@
     Username: 'Oliver', ApiUrl: 'https://chrono-clips.example.workers.dev', UploadKey: 'secret', Bitrate: 0, Fps: 60, Resolution: '1920x1080',
     Encoder: 'auto', Mode: 2, RecorderEnabled: true, SelectedApplication: '', OutputFolder: 'C:\\Users\\Player\\Videos\\Chrono',
     TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0,
-    GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
+    GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
     FirstRunCompleted: true, ShowDiagnostics: false,
     Hotkeys: [
       { Name: 'Quick Clip', Key: 'PageUp', Modifiers: ['Control'], ClipLengthSeconds: 30 },

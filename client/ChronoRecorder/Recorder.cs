@@ -44,6 +44,15 @@ namespace ChronoRecorder
         // the game is in front (see GameCapturePlanner); these track that.
         private bool windowCaptureFailed;
         private bool captureNeedsGameInFront;
+
+        // Screen capture may only run while the game is in front, and "in front" changes in an instant when you alt-tab. The
+        // once-a-second monitor tick let a couple of seconds of whatever you switched to into the clip, so while screen
+        // capture is running the foreground is checked several times a second (it is one cheap lookup), and the last
+        // moments before a pause are cut off, since the switch happened somewhere between the last check and the stop.
+        private System.Threading.Timer? focusTimer;
+        private int focusBusy;
+        private const int FocusPollMilliseconds = 100;
+        private const double FocusLossGuardSeconds = 0.8;
         private bool loggedWaiting;
 
         // FFmpeg was killed on purpose to reopen the sound devices, not because the capture broke.
@@ -86,6 +95,21 @@ namespace ChronoRecorder
         public bool PreferGpuExport { get; set; } = true;
 
         public bool IsRecordingActive => isRecording;
+
+        /// <summary>
+        /// Is there anything to save? True while recording, and also while screen capture is paused because the game isn't in
+        /// front (you alt-tabbed): what was recorded just before is still in the buffer, and that is the moment someone wants
+        /// to clip.
+        /// </summary>
+        public bool HasBufferedFootage
+        {
+            get
+            {
+                if (isRecording) return true;
+                try { return Directory.EnumerateFiles(config.TempFolder, "segment_*.ts").Any(); }
+                catch { return false; }
+            }
+        }
 
         /// <summary>Size of the video being recorded, like "2560x1440". Null until recording has started once.</summary>
         public string? CaptureResolution { get; private set; }
@@ -205,7 +229,7 @@ namespace ChronoRecorder
                 return CaptureSourceChooser.Choose(PickMonitor(), PrimaryBounds());
 
             IntPtr window = ResolveGameWindow();
-            var plan = GameCapturePlanner.Plan(config.GameCapture, windowCaptureFailed, window != IntPtr.Zero);
+            var plan = GameCapturePlanner.Plan(config.GameCapture, windowCaptureFailed, window != IntPtr.Zero, WindowCaptureSupport.Borderless);
             var monitor = window == IntPtr.Zero ? null : MonitorLocator.ForWindow(window) ?? MonitorLocator.Primary();
 
             switch (plan)
@@ -221,7 +245,10 @@ namespace ChronoRecorder
                         loggedWaiting = true;
                         return null;
                     }
-                    return CaptureSourceChooser.Choose(monitor, PrimaryBounds());
+                    // The game is in front, so the screen it is on is the one the foreground window is on. That is more
+                    // reliable than the game's "main window", which can be a launcher or a hidden window on another screen.
+                    var front = MonitorLocator.ForWindow(WindowDetector.GetForegroundWindowHandle());
+                    return CaptureSourceChooser.Choose(front ?? monitor, PrimaryBounds());
 
                 default:
                     if (!loggedWaiting) Console.WriteLine($"Not recording {TargetName}: its window wasn't found");
@@ -252,7 +279,7 @@ namespace ChronoRecorder
         public Size RecordingSize()
         {
             if (nativeSize.Width > 0 && nativeSize.Height > 0) return nativeSize;
-            return PickMonitor()?.Bounds.Size ?? PrimaryBounds().Size;
+            return PickMonitor()?.Pixels ?? PrimaryBounds().Size;
         }
 
         private static Rectangle PrimaryBounds()
@@ -300,6 +327,7 @@ namespace ChronoRecorder
             }
 
             foreach (var capture in audio) capture.Dispose();
+            StopFocusWatch();
             Console.WriteLine("✓ Recording stopped");
         }
 
@@ -461,6 +489,84 @@ namespace ChronoRecorder
             nativeSize = source.Bounds.Size;
             CaptureResolution = CaptureSizing.Describe(nativeSize);
             isRecording = true;
+
+            if (captureNeedsGameInFront) StartFocusWatch(); else StopFocusWatch();
+        }
+
+        private void StartFocusWatch()
+        {
+            if (focusTimer == null) focusTimer = new System.Threading.Timer(FocusTick, null, FocusPollMilliseconds, FocusPollMilliseconds);
+        }
+
+        private void StopFocusWatch()
+        {
+            var timer = focusTimer;
+            focusTimer = null;
+            timer?.Dispose();
+        }
+
+        private void FocusTick(object? state)
+        {
+            if (!isRecording || !captureNeedsGameInFront) return;
+            if (System.Threading.Interlocked.Exchange(ref focusBusy, 1) == 1) return;   // a pause is already under way
+
+            try
+            {
+                if (!GameInFront()) PauseBecauseGameLeftFront();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ Error watching the foreground window: {ex.Message}");
+            }
+            finally
+            {
+                System.Threading.Volatile.Write(ref focusBusy, 0);
+            }
+        }
+
+        /// <summary>Stop screen capture the moment the game is no longer the window in front, and cut off what may have leaked.</summary>
+        private void PauseBecauseGameLeftFront()
+        {
+            string? run = currentRun;
+            Note($"⏸️ {TargetName} isn't in front: pausing screen capture so nothing else is recorded");
+            StopRecording();
+            if (run != null) TrimTail(run);
+        }
+
+        /// <summary>
+        /// Remove the last moments of a run that was paused because the game lost the front. The switch happened somewhere
+        /// between the last check and the stop, so those frames may already show what was switched to. The cut is a stream
+        /// copy of one short file, so it takes a moment and loses nothing else.
+        /// </summary>
+        private void TrimTail(string run)
+        {
+            try
+            {
+                string? path = tracker.NewestFileOf(run);
+                if (path == null) return;
+
+                double? length = MediaProbe.DurationSeconds(path);
+                if (length == null) return;
+
+                double keep = length.Value - FocusLossGuardSeconds;
+                if (keep < 0.5)
+                {
+                    File.Delete(path);   // nothing worth keeping: it would be almost all the guard
+                    tracker.Forget(path);
+                    return;
+                }
+
+                string temp = path + ".trim";
+                var (ok, _) = FfmpegRunner.Run($"-hide_banner -loglevel error -i \"{path}\" -t {keep.ToString("F3", CultureInfo.InvariantCulture)} -c copy -f mpegts -y \"{temp}\"", 15_000);
+                if (!ok) { try { File.Delete(temp); } catch { } return; }
+
+                File.Move(temp, path, overwrite: true);
+                tracker.Forget(path);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ Couldn't trim the end of the footage: {ex.Message}");   // a save may be reading it; the leak is a fraction of a second
+            }
         }
 
         /// <summary>One block of FFmpeg's progress report. Keeps the newest numbers, and lets the governor decide whether this PC is keeping up.</summary>
@@ -529,7 +635,8 @@ namespace ChronoRecorder
                 loadLevel, (config.EncoderLoad ?? "auto").ToLowerInvariant(), governor != null, currentBitrateKbps, buffer, pid,
                 recording ? startedUtc : null, recording ? latestStats : null, encoderNote,
                 audio.Select(a => a.Source == AudioSource.SystemSound ? "game sound" : "microphone").ToList(),
-                events, screen?.AdapterName ?? "", screen?.AdapterVendorId ?? 0);
+                events, screen?.AdapterName ?? "", screen?.AdapterVendorId ?? 0,
+                config.GameCapture ?? "auto", WindowCaptureSupport.Borderless);
         }
 
         /// <summary>The encoder for display. It never starts the detection (which runs FFmpeg), so an idle Chrono shows what it has learned so far.</summary>
@@ -1022,8 +1129,11 @@ namespace ChronoRecorder
             // Screen capture (a fallback for games) must never see anything but the game: pause the moment it isn't in front.
             if (shouldRecord && isRecording && captureNeedsGameInFront && !GameInFront())
             {
-                Console.WriteLine($"⏸️ {TargetName} isn't in front: pausing screen capture so nothing else is recorded");
-                StopRecording();
+                if (System.Threading.Interlocked.Exchange(ref focusBusy, 1) == 0)   // the faster check may be doing this already
+                {
+                    try { PauseBecauseGameLeftFront(); }
+                    finally { System.Threading.Volatile.Write(ref focusBusy, 0); }
+                }
                 return;
             }
 

@@ -50,9 +50,9 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
-        public void AFreshInstall_CapturesGamesAsWindows()
+        public void AFreshInstall_UsesAutomaticGameCapture()
         {
-            Assert.Equal("window", new RecorderConfig().GameCapture);
+            Assert.Equal("auto", new RecorderConfig().GameCapture);
         }
     }
 }

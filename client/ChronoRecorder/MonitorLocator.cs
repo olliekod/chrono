@@ -12,8 +12,69 @@ namespace ChronoRecorder
     /// <param name="Handle">The HMONITOR, the same value user32 returns for a window on this display.</param>
     /// <param name="AdapterName">The graphics chip the display is connected to, as DXGI names it.</param>
     /// <param name="AdapterVendorId">PCI vendor of that chip: 0x10DE NVIDIA, 0x1002 AMD, 0x8086 Intel.</param>
+    /// <param name="PixelSize">The panel's real size in pixels. Under Windows display scaling (125%, 150%) a program that isn't
+    /// DPI aware is told a smaller screen, and <c>Bounds</c> is that smaller size (a 2560x1440 panel at 125% reads 2048x1152).
+    /// Bounds stays as Windows reports it, because window rectangles are reported the same way and are compared with it.</param>
     public sealed record MonitorInfo(int AdapterIndex, int OutputIndex, IntPtr Handle, Rectangle Bounds, string DeviceName, bool Rotated,
-        string AdapterName = "", uint AdapterVendorId = 0);
+        string AdapterName = "", uint AdapterVendorId = 0, Size? PixelSize = null)
+    {
+        /// <summary>The size to record at: the real pixels, not the scaled-down size Windows reports.</summary>
+        public Size Pixels => PixelSize ?? Bounds.Size;
+    }
+
+    /// <summary>Finds a screen's real pixel size when Windows display scaling is hiding it.</summary>
+    public static class DisplayScaling
+    {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct DevMode
+        {
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+            public ushort dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+            public uint dmFields;
+            public int dmPositionX, dmPositionY;
+            public uint dmDisplayOrientation, dmDisplayFixedOutput;
+            public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+            public ushort dmLogPixels;
+            public uint dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+            public uint dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW")]
+        private static extern bool EnumDisplaySettings(string deviceName, int modeNumber, ref DevMode mode);
+
+        private const int CurrentSettings = -1;
+
+        /// <summary>The display's current mode. That is the panel's real resolution, whatever scaling is applied on top of it.</summary>
+        public static Size Physical(string deviceName, Size reported)
+        {
+            try
+            {
+                var mode = new DevMode { dmSize = (ushort)Marshal.SizeOf<DevMode>() };
+                if (!EnumDisplaySettings(deviceName, CurrentSettings, ref mode)) return reported;
+                return Plausible(reported, new Size((int)mode.dmPelsWidth, (int)mode.dmPelsHeight));
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or MarshalDirectiveException)
+            {
+                return reported;
+            }
+        }
+
+        /// <summary>
+        /// The real size, if it looks like the reported one scaled up by display scaling, and otherwise the reported size. A
+        /// rotated screen, or a mode that doesn't fit, is not something to guess about: recording at a wrong size is worse
+        /// than recording at the scaled one.
+        /// </summary>
+        public static Size Plausible(Size reported, Size physical)
+        {
+            if (reported.Width <= 0 || reported.Height <= 0 || physical.Width < reported.Width || physical.Height < reported.Height) return reported;
+
+            double across = physical.Width / (double)reported.Width, down = physical.Height / (double)reported.Height;
+            if (Math.Abs(across - down) > 0.02 || across > 4.0) return reported;
+
+            return new Size(physical.Width - physical.Width % 2, physical.Height - physical.Height % 2);
+        }
+    }
 
     /// <summary>One graphics chip, including ones with no display attached (the NVIDIA card in a laptop whose screen is wired to Intel).</summary>
     /// <param name="VideoMemoryBytes">Dedicated video memory. Windows' own WMI figure is capped at 4 GB, so this comes from DXGI.</param>
@@ -170,7 +231,8 @@ namespace ChronoRecorder
                             result.Add(new MonitorInfo(
                                 (int)a, (int)o, desc.Monitor,
                                 Rectangle.FromLTRB(desc.Left, desc.Top, desc.Right, desc.Bottom),
-                                desc.DeviceName, IsRotated(desc.Rotation), adapterName, vendor));
+                                desc.DeviceName, IsRotated(desc.Rotation), adapterName, vendor,
+                                DisplayScaling.Physical(desc.DeviceName, new Size(desc.Right - desc.Left, desc.Bottom - desc.Top))));
                         }
 
                         Marshal.ReleaseComObject(output);
@@ -209,7 +271,8 @@ namespace ChronoRecorder
     {
         /// <summary>Capture one window (a game), made at the size of the monitor it is on.</summary>
         public static CaptureSource ForWindow(IntPtr window, MonitorInfo? monitor, Rectangle primaryBounds)
-            => new CaptureSource(CaptureMethod.WindowCapture, monitor?.OutputIndex ?? 0, monitor?.Bounds ?? primaryBounds, window.ToInt64());
+            => new CaptureSource(CaptureMethod.WindowCapture, monitor?.OutputIndex ?? 0,
+                monitor == null ? primaryBounds : new Rectangle(monitor.Bounds.Location, monitor.Pixels), window.ToInt64());
 
         public static CaptureSource Choose(MonitorInfo? monitor, Rectangle primaryBounds)
         {
@@ -219,10 +282,14 @@ namespace ChronoRecorder
             // Desktop Duplication only sees the default GPU's monitors, and hands back rotated ones un-rotated.
             bool duplicable = monitor.AdapterIndex == 0 && !monitor.Rotated;
 
+            // Desktop Duplication hands over the panel's real pixels, so that is the size the recording is. GDI works in the
+            // scaled coordinates Windows gives this program, so its region is left as reported.
+            var bounds = duplicable ? new Rectangle(monitor.Bounds.Location, monitor.Pixels) : monitor.Bounds;
+
             return new CaptureSource(
                 duplicable ? CaptureMethod.DesktopDuplication : CaptureMethod.Gdi,
                 monitor.OutputIndex,
-                monitor.Bounds);
+                bounds);
         }
     }
 }

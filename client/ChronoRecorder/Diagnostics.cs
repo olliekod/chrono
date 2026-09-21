@@ -17,7 +17,7 @@ namespace ChronoRecorder
         bool Recording, string Target, CaptureMethod? Method, Size Size, int ConfiguredFps, int EffectiveFps, string Encoder,
         int LoadLevel, string LoadSetting, bool GovernorActive, int BitrateKbps, double BufferSeconds, int FfmpegPid, DateTime? StartedUtc,
         EncodeStats? Stats, string EncoderNote, IReadOnlyList<string> AudioSources, IReadOnlyList<string> Events,
-        string ScreenAdapterName, uint ScreenAdapterVendorId);
+        string ScreenAdapterName, uint ScreenAdapterVendorId, string GameCapture = "auto", bool BorderlessCapture = true);
 
     public interface IDiagnosticsSource
     {
@@ -145,7 +145,8 @@ namespace ChronoRecorder
     public sealed record FindingInputs(
         bool Recording, string Encoder, string EncoderNote, GpuDetector.GpuType GpuType, GpuDetector.GpuTier GpuTier, CaptureMethod? Method,
         double Speed, long Dropped, double FfmpegCpuOneCore, double EncodeEnginePercent, double ThreeDEnginePercent,
-        int LoadLevel, int ConfiguredFps, uint ScreenAdapterVendorId, string ScreenAdapterName, double RamGb, string GpuName);
+        int LoadLevel, int ConfiguredFps, uint ScreenAdapterVendorId, string ScreenAdapterName, double RamGb, string GpuName,
+        string GameCapture = "auto", bool BorderlessCapture = true);
 
     public static class DiagnosticsFindings
     {
@@ -161,8 +162,14 @@ namespace ChronoRecorder
             if (f.Recording && f.Speed > 0 && f.Speed < 0.95)
                 found.Add(new DiagFinding("bad", $"The encoder is behind, working at {f.Speed:0.00}x real time. Clips may stutter or skip."));
 
-            if (f.Recording && f.Dropped > 0)
-                found.Add(new DiagFinding("warn", $"{f.Dropped} frames have been dropped since this recording started."));
+            // Dropped frames are deliberately not a finding. FFmpeg counts a frame as dropped when several arrive for one output
+            // slot, which happens in bursts when a window is restored after an alt-tab, and constantly when a game runs faster
+            // than the recording. Nothing is lost by it: what shows a recording really falling behind is the encoding speed.
+
+            // On Windows 10 a captured window gets a yellow border, so a game is recorded through the screen instead.
+            if (f.Recording && f.Method is CaptureMethod.DesktopDuplication or CaptureMethod.Gdi && !f.BorderlessCapture
+                && string.Equals(f.GameCapture, "auto", StringComparison.OrdinalIgnoreCase))
+                found.Add(new DiagFinding("info", "Chrono is recording the screen while the game is in front, and pauses when you alt-tab. Windows 10 draws a yellow border around a window that is being captured, so Chrono only captures the game's own window on Windows 11."));
 
             if (f.LoadLevel > 0)
                 found.Add(new DiagFinding("info", $"Recording is running at reduced load ({LoadPlan.Describe(f.LoadLevel, f.ConfiguredFps, LoadPlan.HasPresetStep(f.Encoder))})."));
@@ -356,7 +363,8 @@ namespace ChronoRecorder
                 new("GPU 3D (recording's share)", facts.Recording ? EngineText(threeD) : "not recording", facts.Recording && threeD >= 0 ? Tone(threeD >= 60, threeD >= 35) : ""),
                 new("Encoding speed", speedText, stats != null ? Tone(stats.Speed > 0 && stats.Speed < 0.95, stats.Speed > 0 && stats.Speed < 0.99) : ""),
                 new("Encoded FPS", stats == null ? (facts.Recording ? "measuring..." : "not recording") : $"{stats.Fps:0.0}"),
-                new("Dropped frames", stats == null ? (facts.Recording ? "measuring..." : "not recording") : stats.DroppedFrames.ToString(CultureInfo.InvariantCulture), stats != null ? Tone(stats.DroppedFrames > 0) : ""),
+                new("Dropped frames", stats == null ? (facts.Recording ? "measuring..." : "not recording")
+                    : stats.DroppedFrames == 0 ? "0" : $"{stats.DroppedFrames} (FFmpeg's count. Bursts when a window is restored are normal, and nothing is lost while the speed above stays at 1.00x)"),
                 new("Repeated frames", stats == null ? (facts.Recording ? "measuring..." : "not recording") : $"{stats.DuplicatedFrames} (normal while the game isn't drawing)"),
             };
 
@@ -372,7 +380,7 @@ namespace ChronoRecorder
 
             var screens = MonitorLocator.Enumerate();
             foreach (var m in screens)
-                pc.Add(new DiagRow("Screen", $"{m.Bounds.Width}×{m.Bounds.Height}{(m.Rotated ? " rotated" : "")} on {(m.AdapterName.Length > 0 ? m.AdapterName : $"graphics chip {m.AdapterIndex}")}"));
+                pc.Add(new DiagRow("Screen", $"{m.Pixels.Width}×{m.Pixels.Height}{(m.Rotated ? " rotated" : "")}{(m.Pixels != m.Bounds.Size ? $" (Windows scaling shows it as {m.Bounds.Width}×{m.Bounds.Height})" : "")} on {(m.AdapterName.Length > 0 ? m.AdapterName : $"graphics chip {m.AdapterIndex}")}"));
 
             pc.Add(new DiagRow("FFmpeg", system.Ffmpeg));
             pc.Add(new DiagRow("Sound", facts.AudioSources.Count == 0 ? "none recorded" : string.Join(", ", facts.AudioSources)));
@@ -382,7 +390,8 @@ namespace ChronoRecorder
                 facts.Recording, facts.Encoder, facts.EncoderNote,
                 gpuInfo?.Type ?? GpuDetector.GpuType.Unknown, gpuInfo?.Tier ?? GpuDetector.GpuTier.Modest, facts.Method,
                 stats?.Speed ?? 0, stats?.DroppedFrames ?? 0, cpuOneCore, Math.Max(encode, 0), Math.Max(threeD, 0),
-                facts.LoadLevel, facts.ConfiguredFps, facts.ScreenAdapterVendorId, facts.ScreenAdapterName, system.RamGb, gpuInfo?.Name ?? ""));
+                facts.LoadLevel, facts.ConfiguredFps, facts.ScreenAdapterVendorId, facts.ScreenAdapterName, system.RamGb, gpuInfo?.Name ?? "",
+                facts.GameCapture, facts.BorderlessCapture));
 
             return new DiagnosticsDto(
                 AppVersion, now,

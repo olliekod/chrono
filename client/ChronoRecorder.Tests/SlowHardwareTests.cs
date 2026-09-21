@@ -600,9 +600,9 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
-        public void DroppedFrames_AreCounted()
+        public void DroppedFrames_AloneAreNeverFlagged()
         {
-            Assert.Contains("12 frames", AllText(Healthy() with { Dropped = 12 }));
+            Assert.DoesNotContain("dropped", AllText(Healthy() with { Dropped = 12 }));
         }
 
         [Fact]
@@ -717,6 +717,22 @@ namespace ChronoRecorder.Tests
             Assert.Equal("2 min 20 sec", Value("Buffer"));
             Assert.Equal("0", Value("Dropped frames"));
             Assert.Equal("1.00x real time", Value("Encoding speed"));
+        }
+
+        [Fact]
+        public void ADroppedFramesCount_IsExplainedNotAlarming()
+        {
+            // FFmpeg's count climbs in bursts when a window is restored after an alt-tab. Nothing is lost by it.
+            var source = new FakeSource();
+            source.Facts = source.Facts with { Stats = new EncodeStats(9000, 60.3, 344, 1845, 1.0, 0, 150, DateTime.UtcNow) };
+
+            var dto = new DiagnosticsCollector(source).Collect();
+
+            var dropped = dto.Sections.SelectMany(s => s.Rows).First(r => r.Label == "Dropped frames");
+            Assert.StartsWith("1845 (", dropped.Value);
+            Assert.Contains("normal", dropped.Value);
+            Assert.Equal("", dropped.Tone);
+            Assert.DoesNotContain(dto.Findings, f => f.Tone == "warn" || f.Tone == "bad");
         }
 
         [Fact]

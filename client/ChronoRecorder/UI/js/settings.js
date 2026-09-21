@@ -15,7 +15,7 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
+  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
@@ -78,10 +78,10 @@
       field('Frame rate', select(String(config.Fps || 60), [['30', '30 FPS'], ['60', '60 FPS'], ['120', '120 FPS'], ['144', '144 FPS']],
         (v) => { config.Fps = parseInt(v, 10); loadRecommended(); })),
       h('div', { class: 'field' }, h('label', { text: 'Video bitrate (kbps)' }), bitrate, hint),
-      field('Capture games as', select(config.GameCapture || 'window', [
-        ['window', "The game's own window (recommended)"], ['monitor', 'The whole monitor, only while the game is in front'],
+      field('Capture games as', select(config.GameCapture || 'auto', [
+        ['auto', 'Automatic (recommended)'], ['window', "The game's own window (Windows 10 draws a yellow border)"], ['monitor', 'The whole monitor, only while the game is in front'],
       ], (v) => { config.GameCapture = v; }),
-        "Recording the window means nothing else can ever end up in a clip: not Discord, not your desktop, even if you alt-tab or minimize the game. Only switch to the monitor if a game records as a black picture."),
+        "Automatic records the game's own window on Windows 11, which means nothing else can ever end up in a clip, even if you alt-tab or minimize the game. Windows 10 draws a yellow border around a window that is being captured, so there Chrono records the monitor instead, only while the game is in front, and pauses when you alt-tab. Only pick Monitor if a game records as a black picture."),
       field('Recording load', select(config.EncoderLoad || 'auto', [
         ['auto', 'Automatic (recommended)'], ['normal', 'Normal'], ['light', 'Light'],
       ], (v) => { config.EncoderLoad = v; }),

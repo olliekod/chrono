@@ -58,8 +58,8 @@ namespace ChronoRecorder
         /// </summary>
         public int ConfigVersion { get; set; } = 0;
 
-        /// <summary>The current generation. 1: the library and automatic recording arrived.</summary>
-        public const int CurrentConfigVersion = 1;
+        /// <summary>The current generation. 1: the library and automatic recording arrived. 2: game capture became "auto".</summary>
+        public const int CurrentConfigVersion = 2;
         public bool RecorderEnabled { get; set; } = true;
         public string SelectedApplication { get; set; } = "";
         public int MinimumFocusTimeSeconds { get; set; } = 2;
@@ -94,11 +94,13 @@ namespace ChronoRecorder
         public bool RecordMicrophone { get; set; } = false;
 
         /// <summary>
-        /// How a game is captured. "window" (default): the game's own window, so nothing else can ever be in the clip.
-        /// "monitor": the whole monitor, and only while the game is in front (for the rare game that records black as a
+        /// How a game is captured. "auto" (default): the game's own window on Windows 11, where nothing extra shows on screen,
+        /// and the monitor (only while the game is in front) on Windows 10, where capturing a window makes Windows draw a
+        /// yellow border around it. "window": always the game's own window, so nothing else can ever be in the clip, border
+        /// or not. "monitor": always the monitor, only while the game is in front (for the rare game that records black as a
         /// window). Whole-screen mode always records the monitor.
         /// </summary>
-        public string GameCapture { get; set; } = "window";
+        public string GameCapture { get; set; } = "auto";
 
         /// <summary>Which speakers/headphones to record the game from (its Windows device id). Empty = Windows' default.</summary>
         public string SpeakerDeviceId { get; set; } = "";
@@ -155,12 +157,19 @@ namespace ChronoRecorder
 
             // Before the library and automatic recording, the recorder had an on/off button and a game to pick. Someone
             // who last pressed Stop would otherwise find the new, automatic Chrono doing nothing. Done once.
-            if (ConfigVersion < CurrentConfigVersion)
+            if (ConfigVersion < 1)
             {
                 RecorderEnabled = true;
                 Mode = RecordingMode.Auto;
-                ConfigVersion = CurrentConfigVersion;
             }
+
+            // "window" used to be the default and was never a choice anyone had to make, so it is not a preference to keep:
+            // on Windows 10 it puts a yellow border over the game. "auto" is the same on Windows 11 and safe on Windows 10.
+            // Someone who really wants the window on Windows 10 can pick it again in Settings.
+            if (ConfigVersion < 2 && string.Equals(GameCapture, "window", StringComparison.OrdinalIgnoreCase))
+                GameCapture = "auto";
+
+            ConfigVersion = CurrentConfigVersion;
 
             // 8000 used to be the default for everyone; it was too little for 1440p and was never a choice.
             if (Bitrate == BitrateSizing.LegacyDefaultKbps)

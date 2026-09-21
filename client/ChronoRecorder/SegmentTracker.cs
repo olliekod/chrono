@@ -127,6 +127,15 @@ namespace ChronoRecorder
             return seconds is > 0 ? seconds.Value : nominalSeconds;
         }
 
+        /// <summary>The newest file that belongs to one run, or null if it has none.</summary>
+        public string? NewestFileOf(string run) => ListFiles().Where(e => e.Run == run).Select(e => e.Path).LastOrDefault();
+
+        /// <summary>Forget a file's measured length, because the file has been changed.</summary>
+        public void Forget(string path)
+        {
+            lock (measured) measured.Remove(path);
+        }
+
         /// <summary>Deletes the oldest finished segments until no more than <paramref name="keepSeconds"/> remain.</summary>
         public int Prune(double keepSeconds, bool recording, string? currentRun = null)
         {

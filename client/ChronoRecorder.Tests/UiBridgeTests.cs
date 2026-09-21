@@ -530,7 +530,7 @@ namespace ChronoRecorder.Tests
             sent["GameCapture"] = "screenshot-everything";
 
             Assert.Contains("capture games", await Fails("saveSettings", new { config = sent }));
-            Assert.Equal("window", config.GameCapture);
+            Assert.Equal("auto", config.GameCapture);
         }
 
         [Fact]

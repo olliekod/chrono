@@ -107,7 +107,7 @@ namespace ChronoRecorder
         {
             try
             {
-                if (recorder == null || library == null || !recorder.IsRecordingActive)
+                if (recorder == null || library == null || !recorder.HasBufferedFootage)
                 {
                     notifier?.Error("Chrono", "Nothing is being recorded right now. Chrono records games automatically once one is running.");
                     return;
