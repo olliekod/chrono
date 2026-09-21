@@ -30,6 +30,15 @@ namespace ChronoRecorder
         public string Resolution { get; set; } = "1920x1080";
         public string Encoder { get; set; } = "auto";
 
+        /// <summary>
+        /// How hard recording works the graphics card: "auto" (default: lighter for modest cards, and steps down by itself
+        /// if the PC can't keep up), "normal" or "light" (both fixed). See <see cref="LoadPlan"/>.
+        /// </summary>
+        public string EncoderLoad { get; set; } = "auto";
+
+        /// <summary>The step "auto" found this PC needs (0-2), remembered so the next launch starts there instead of losing footage to find it again.</summary>
+        public int LearnedLoadLevel { get; set; } = 0;
+
         public enum RecordingMode
         {
             /// <summary>Record the whole monitor whenever the recorder is on.</summary>

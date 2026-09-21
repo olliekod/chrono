@@ -300,6 +300,42 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   await sleep(100);
   check('saving works and the bar goes away' + (doc.querySelector('.unsaved') ? ' (bar says: ' + doc.querySelector('.unsaved').textContent + ')' : ''), !doc.querySelector('.unsaved'));
 
+  // ------------------------------------------------------------- recording load setting
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /Recording/.test(b.textContent)).click();
+  await until(() => doc.querySelector('select[aria-label="Recording load"]'), 'the recording load setting');
+  const loadSelect = doc.querySelector('select[aria-label="Recording load"]');
+  check('recording load offers automatic, normal and light, automatic first', [...loadSelect.options].map((o) => o.value).join() === 'auto,normal,light' && loadSelect.value === 'auto');
+  loadSelect.value = 'light'; loadSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+  await until(() => /Recording settings applied/.test(doc.querySelector('.toasts').textContent), 'recording settings applied toast');
+  check('changing the load says the recording restarted', true);
+
+  // ------------------------------------------------------------------ diagnostics
+  [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent)).click();
+  await until(() => doc.querySelector('.diag-card'), 'the diagnostics page');
+  const diagText = () => doc.querySelector('.content').textContent;
+  check('the diagnostics page has its three sections', [...doc.querySelectorAll('.diag-card h3')].slice(0, 3).map((h3) => h3.textContent).join() === 'Recording,Performance,This PC');
+  check('it shows the stats that were asked for', ['Capture', 'Encoder', 'Input', 'Bitrate', 'Buffer', 'FFmpeg CPU', 'FFmpeg RAM', 'GPU video encode', 'Dropped frames']
+    .every((label) => [...doc.querySelectorAll('.diag-list dt')].some((dt) => dt.textContent === label)));
+  check('the capture, encoder and input read like the example', /Windows Graphics Capture/.test(diagText()) && /NVIDIA NVENC H\.264/.test(diagText()) && /2560\u00D71440 @ 60/.test(diagText()));
+  check('what needs attention is at the top', !!doc.querySelector('.diag-finding') && /Nothing needs attention/.test(doc.querySelector('.diag-finding').textContent));
+  check('it says nothing is sent anywhere', /never sends it anywhere/.test(diagText()));
+  check('recent events are listed', /Recording 2560x1440 at 60 FPS/.test(doc.querySelector('.diag-events').textContent));
+  const before = doc.querySelector('.diag-list dd').textContent;
+  await sleep(2400);
+  check('the numbers refresh by themselves while the page is open', !!doc.querySelector('.diag-card') && doc.querySelector('.diag-list dd').textContent === before);
+  [...doc.querySelectorAll('.topbar .btn')].find((b) => /Copy report/.test(b.textContent)).click();
+  await until(() => /Report copied/.test(doc.querySelector('.toasts').textContent), 'report copied toast');
+  check('copying the report says so', true);
+
+  // Leaving the page must stop its refreshing: it asks the app to read GPU counters, which should only happen while it is on screen.
+  let asked = 0;
+  const realRequest = window.Chrono.bridge.request;
+  window.Chrono.bridge.request = (action, payload) => { if (action === 'getDiagnostics') asked++; return realRequest(action, payload); };
+  [...doc.querySelectorAll('.nav-item')].find((b) => /Library/.test(b.textContent)).click();
+  await sleep(2600);
+  check('leaving the diagnostics page stops it asking for numbers', !doc.querySelector('.diag-card') && asked === 0);
+
   // ------------------------------------------------------ empty library / paused
   const empty = await open('?state=empty');
   await until(() => empty.window.document.querySelector('.empty'), 'empty state');

@@ -142,7 +142,7 @@ namespace ChronoRecorder.Tests
 
             Assert.DoesNotContain("-map", args);
             Assert.DoesNotContain("-c:a", args);
-            Assert.DoesNotContain("pipe", args);
+            Assert.DoesNotContain("chrono_", args);   // no audio pipe (the "-progress pipe:1" report is not one)
         }
 
         [Fact]
@@ -161,8 +161,9 @@ namespace ChronoRecorder.Tests
         {
             string args = CaptureCommand.Build(WithAudio(Pipe("sys")));
 
-            Assert.True(args.IndexOf("ddagrab") < args.IndexOf("pipe"));
-            Assert.True(args.IndexOf("pipe") < args.IndexOf("-map"));
+            // The audio pipe is the one named chrono_..., not FFmpeg's own "-progress pipe:1".
+            Assert.True(args.IndexOf("ddagrab") < args.IndexOf("chrono_sys"));
+            Assert.True(args.IndexOf("chrono_sys") < args.IndexOf("-map"));
         }
 
         [Fact]

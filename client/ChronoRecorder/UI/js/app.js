@@ -37,6 +37,7 @@
       ['library', 'Library', 'library'],
       ['recording', 'Recording', 'record'],
       ['settings', 'Settings', 'sliders'],
+      ['diagnostics', 'Diagnostics', 'pulse'],
     ];
     navButtons = {};
     const nav = h('nav', { class: 'nav', 'aria-label': 'Main' });

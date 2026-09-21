@@ -14,6 +14,7 @@ namespace ChronoRecorder
         public const int MinClipSeconds = 5;
         public const int MaxClipSeconds = 600;
         private static readonly string[] Encoders = { "auto", "h264_nvenc", "h264_amf", "h264_qsv", "libx264" };
+        private static readonly string[] EncoderLoads = { "auto", "normal", "light" };
 
         /// <summary>Tidies the values that can be tidied (trimming, name length) and returns a message for the first thing wrong, or null.</summary>
         public static string? ValidateAndTidy(RecorderConfig c)
@@ -36,6 +37,9 @@ namespace ChronoRecorder
             if (c.Bitrate != 0 && (c.Bitrate < 1000 || c.Bitrate > 80000)) return "The bitrate must be between 1000 and 80000 kbps, or empty for the recommended one.";
             if (!Regex.IsMatch(c.Resolution ?? "", @"^(native|\d{3,5}x\d{3,5})$", RegexOptions.IgnoreCase)) return "Choose a clip size from the list.";
             if (!Encoders.Contains(c.Encoder ?? "", StringComparer.OrdinalIgnoreCase)) return "Choose an encoder from the list.";
+            if (!EncoderLoads.Contains(c.EncoderLoad ?? "", StringComparer.OrdinalIgnoreCase)) return "Choose how hard recording should work from the list.";
+            c.EncoderLoad = c.EncoderLoad!.ToLowerInvariant();
+            c.LearnedLoadLevel = Math.Clamp(c.LearnedLoadLevel, 0, LoadPlan.MaxLevel);
 
             return ValidateHotkeys(c.Hotkeys);
         }

@@ -10,7 +10,17 @@ namespace ChronoRecorder
     /// <param name="AdapterIndex">Which GPU it is connected to. Desktop Duplication only reaches GPU 0.</param>
     /// <param name="OutputIndex">Its number on that GPU; this is what ddagrab's output_idx takes.</param>
     /// <param name="Handle">The HMONITOR, the same value user32 returns for a window on this display.</param>
-    public sealed record MonitorInfo(int AdapterIndex, int OutputIndex, IntPtr Handle, Rectangle Bounds, string DeviceName, bool Rotated);
+    /// <param name="AdapterName">The graphics chip the display is connected to, as DXGI names it.</param>
+    /// <param name="AdapterVendorId">PCI vendor of that chip: 0x10DE NVIDIA, 0x1002 AMD, 0x8086 Intel.</param>
+    public sealed record MonitorInfo(int AdapterIndex, int OutputIndex, IntPtr Handle, Rectangle Bounds, string DeviceName, bool Rotated,
+        string AdapterName = "", uint AdapterVendorId = 0);
+
+    /// <summary>One graphics chip, including ones with no display attached (the NVIDIA card in a laptop whose screen is wired to Intel).</summary>
+    /// <param name="VideoMemoryBytes">Dedicated video memory. Windows' own WMI figure is capped at 4 GB, so this comes from DXGI.</param>
+    public sealed record AdapterInfo(int Index, string Name, uint VendorId, long VideoMemoryBytes)
+    {
+        public string Vendor => VendorId switch { 0x10DE => "NVIDIA", 0x1002 or 0x1022 => "AMD", 0x8086 => "Intel", _ => "Other" };
+    }
 
     /// <summary>
     /// Finds which monitor a window is on and how to number it for FFmpeg. DXGI is asked directly because
@@ -56,6 +66,15 @@ namespace ChronoRecorder
             [PreserveSig] int EnumAdapters1(uint index, out IntPtr adapter);
         }
 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct DxgiAdapterDesc
+        {
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Description;
+            public uint VendorId, DeviceId, SubSysId, Revision;
+            public UIntPtr DedicatedVideoMemory, DedicatedSystemMemory, SharedSystemMemory;
+            public long AdapterLuid;
+        }
+
         [ComImport, Guid("2411e7e1-12ac-4ccf-bd14-9798e8534dc0"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         private interface IDXGIAdapter
         {
@@ -64,6 +83,7 @@ namespace ChronoRecorder
             [PreserveSig] int GetPrivateData(IntPtr a, IntPtr b, IntPtr c);
             [PreserveSig] int GetParent(IntPtr a, out IntPtr b);
             [PreserveSig] int EnumOutputs(uint index, out IntPtr output);
+            [PreserveSig] int GetDesc(out DxgiAdapterDesc desc);
         }
 
         [ComImport, Guid("ae02eedb-c735-4690-8d52-5a8dc20213aa"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -81,7 +101,7 @@ namespace ChronoRecorder
         // Monitors change when someone plugs one in, so a second-old answer is still the right one.
         private static readonly TimeSpan CacheTime = TimeSpan.FromMilliseconds(1000);
         private static readonly object cacheGate = new object();
-        private static IReadOnlyList<MonitorInfo>? cached;
+        private static (IReadOnlyList<MonitorInfo> Monitors, IReadOnlyList<AdapterInfo> Adapters)? cached;
         private static DateTime cachedAtUtc;
 
         /// <summary>Forget the cached monitors, so the next question reads the hardware. Called before recording starts.</summary>
@@ -91,11 +111,16 @@ namespace ChronoRecorder
         }
 
         /// <summary>Every monitor attached to the desktop. Empty if DXGI can't be reached.</summary>
-        public static IReadOnlyList<MonitorInfo> Enumerate()
+        public static IReadOnlyList<MonitorInfo> Enumerate() => Snapshot().Monitors;
+
+        /// <summary>Every graphics chip DXGI knows, with or without a display on it.</summary>
+        public static IReadOnlyList<AdapterInfo> Adapters() => Snapshot().Adapters;
+
+        private static (IReadOnlyList<MonitorInfo> Monitors, IReadOnlyList<AdapterInfo> Adapters) Snapshot()
         {
             lock (cacheGate)
             {
-                if (cached != null && DateTime.UtcNow - cachedAtUtc < CacheTime) return cached;
+                if (cached != null && DateTime.UtcNow - cachedAtUtc < CacheTime) return cached.Value;
             }
 
             var fresh = Read();
@@ -108,15 +133,16 @@ namespace ChronoRecorder
             return fresh;
         }
 
-        private static IReadOnlyList<MonitorInfo> Read()
+        private static (IReadOnlyList<MonitorInfo>, IReadOnlyList<AdapterInfo>) Read()
         {
             var result = new List<MonitorInfo>();
+            var adapters = new List<AdapterInfo>();
             IDXGIFactory1? factory = null;
 
             try
             {
                 Guid iid = typeof(IDXGIFactory1).GUID;
-                if (CreateDXGIFactory1(ref iid, out IntPtr factoryPtr) != 0) return result;
+                if (CreateDXGIFactory1(ref iid, out IntPtr factoryPtr) != 0) return (result, adapters);
                 factory = (IDXGIFactory1)Marshal.GetObjectForIUnknown(factoryPtr);
                 Marshal.Release(factoryPtr);
 
@@ -124,6 +150,15 @@ namespace ChronoRecorder
                 {
                     var adapter = (IDXGIAdapter)Marshal.GetObjectForIUnknown(adapterPtr);
                     Marshal.Release(adapterPtr);
+
+                    string adapterName = "";
+                    uint vendor = 0;
+                    if (adapter.GetDesc(out var described) == 0)
+                    {
+                        adapterName = described.Description ?? "";
+                        vendor = described.VendorId;
+                        adapters.Add(new AdapterInfo((int)a, adapterName, vendor, (long)(ulong)described.DedicatedVideoMemory));
+                    }
 
                     for (uint o = 0; adapter.EnumOutputs(o, out IntPtr outputPtr) == 0; o++)
                     {
@@ -135,7 +170,7 @@ namespace ChronoRecorder
                             result.Add(new MonitorInfo(
                                 (int)a, (int)o, desc.Monitor,
                                 Rectangle.FromLTRB(desc.Left, desc.Top, desc.Right, desc.Bottom),
-                                desc.DeviceName, IsRotated(desc.Rotation)));
+                                desc.DeviceName, IsRotated(desc.Rotation), adapterName, vendor));
                         }
 
                         Marshal.ReleaseComObject(output);
@@ -153,7 +188,7 @@ namespace ChronoRecorder
                 if (factory != null) Marshal.ReleaseComObject(factory);
             }
 
-            return result;
+            return (result, adapters);
         }
 
         /// <summary>The monitor a window is mostly on, or null for no window or an unknown display.</summary>

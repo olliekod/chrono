@@ -40,7 +40,8 @@ namespace ChronoRecorder
         int SegmentSeconds,
         string SegmentPattern,
         IReadOnlyList<AudioInput>? Audio = null,
-        double? ClockStartUnixSeconds = null);
+        double? ClockStartUnixSeconds = null,
+        EncodeLoad Load = EncodeLoad.Normal);
 
     /// <summary>
     /// Builds the one long-running FFmpeg command that captures a monitor and writes rolling segments.
@@ -59,7 +60,9 @@ namespace ChronoRecorder
             if (audio.Count > 0 && r.ClockStartUnixSeconds is null)
                 throw new ArgumentException("Audio needs the shared start time so it can be lined up with the picture.", nameof(r));
 
-            var parts = new List<string> { "-hide_banner -nostats -loglevel warning" };
+            // -progress prints a small block of numbers every two seconds (frames, speed, dropped frames) to standard output,
+            // where the recorder reads them for the Diagnostics page and to notice when a PC can't keep up.
+            var parts = new List<string> { "-hide_banner -nostats -loglevel warning -progress pipe:1 -stats_period 2" };
             var videoFilters = new List<string>();
 
             // ---- inputs. Every input goes first: ffmpeg treats an option placed before an -i as an input option
@@ -142,7 +145,7 @@ namespace ChronoRecorder
             if (r.Source.Method == CaptureMethod.Gdi)
                 parts.Add("-pix_fmt yuv420p");
 
-            parts.Add(EncoderProfile.BuildArgs(encoder, r.BitrateKbps, r.Fps));
+            parts.Add(EncoderProfile.BuildArgs(encoder, r.BitrateKbps, r.Fps, EncodeSpeed.Live, r.Load));
 
             // Clips are always stereo AAC at 48 kHz, whatever the device gave us.
             if (audio.Count > 0)

@@ -366,6 +366,29 @@ select.filter option { background: #2b2d31; }
 .fact .k .icon { width: 14px; height: 14px; }
 .fact .v { font-weight: 600; font-size: 15px; }
 
+/* ---- Diagnostics */
+.diag-note { color: var(--muted); font-size: 13px; max-width: 78ch; margin-bottom: 16px; }
+.diag-findings { display: grid; gap: 8px; margin-bottom: 16px; }
+.diag-finding { display: flex; gap: 10px; align-items: flex-start; background: var(--side); border-radius: var(--radius); border-left: 4px solid var(--faint); padding: 10px 14px; }
+.diag-finding .icon { width: 16px; height: 16px; margin-top: 2px; flex: none; }
+.diag-finding.good { border-left-color: var(--good); }
+.diag-finding.good .icon { color: var(--good); }
+.diag-finding.info { border-left-color: var(--brand); }
+.diag-finding.warn { border-left-color: var(--warn); }
+.diag-finding.warn .icon { color: var(--warn); }
+.diag-finding.bad { border-left-color: var(--rec); }
+.diag-finding.bad .icon { color: var(--rec); }
+.diag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr)); gap: 16px; align-items: start; margin-bottom: 16px; }
+.diag-card { background: var(--side); border-radius: var(--radius); padding: 14px 16px 8px; }
+.diag-card h3 { font: 600 13px var(--font-display); color: var(--muted); margin-bottom: 6px; }
+.diag-list { display: grid; grid-template-columns: minmax(120px, 36%) 1fr; column-gap: 14px; }
+.diag-list dt { color: var(--muted); padding: 5px 0; }
+.diag-list dd { padding: 5px 0; font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.diag-list dd.warn { color: var(--warn); }
+.diag-list dd.bad { color: var(--rec); }
+.diag-events { font: 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--muted); background: var(--field); border-radius: var(--radius-sm);
+  padding: 10px 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; margin-bottom: 8px; }
+
 .h2 { font: 600 15px var(--font-display); margin: 0 0 4px; }
 .h2-note { color: var(--muted); margin-bottom: 12px; font-size: 13px; max-width: 70ch; }
 

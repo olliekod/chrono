@@ -44,7 +44,8 @@ namespace ChronoRecorder
             this.config = config;
             this.library = library;
             this.media = media;
-            bridge = new UiBridge(config, recorder, library, media, uploader, this, onConfigSaved);
+            bridge = new UiBridge(config, recorder, library, media, uploader, this, onConfigSaved,
+                diagnostics: recorder is IDiagnosticsSource source ? new DiagnosticsCollector(source) : null);
 
             Text = "Chrono";
             Icon = TrayIcons.Logo;

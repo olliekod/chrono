@@ -16,6 +16,19 @@ namespace ChronoRecorder
         Save
     }
 
+    /// <summary>How hard recording asks the graphics card to work. See <see cref="LoadPlan"/>.</summary>
+    public enum EncodeLoad
+    {
+        Normal,
+
+        /// <summary>
+        /// A faster NVENC preset: p3 rather than p4. On an RTX 4080 recording 2560x1440 it takes the video encoder from
+        /// about 10% to 7% for the same file size and a VMAF score within a point. Presets p1 and p2 halve it but let the
+        /// bitrate overshoot by about 28%, which makes bigger clips for little gain, so they are not used.
+        /// </summary>
+        Light
+    }
+
     public static class EncoderProfile
     {
         /// <summary>Time between keyframes in recorded segments; also how far a copy-mode clip start can snap.</summary>
@@ -34,7 +47,7 @@ namespace ChronoRecorder
             return "libx264";
         }
 
-        public static string BuildArgs(string? encoder, int bitrateKbps, int fps, EncodeSpeed speed = EncodeSpeed.Live)
+        public static string BuildArgs(string? encoder, int bitrateKbps, int fps, EncodeSpeed speed = EncodeSpeed.Live, EncodeLoad load = EncodeLoad.Normal)
         {
             string name = Normalize(encoder);
 
@@ -48,7 +61,7 @@ namespace ChronoRecorder
             // cleaner result from the same bitrate.
             string tuning = name switch
             {
-                "h264_nvenc" => "-preset p4 -tune hq -rc vbr -spatial-aq 1 -profile:v high",
+                "h264_nvenc" => $"-preset {(load == EncodeLoad.Light ? "p3" : "p4")} -tune hq -rc vbr -spatial-aq 1 -profile:v high",
                 "h264_amf" => speed == EncodeSpeed.Save ? "-quality balanced" : "-quality speed",
                 "h264_qsv" => speed == EncodeSpeed.Save ? "-preset faster" : "-preset veryfast",
                 _ => speed == EncodeSpeed.Save ? "-preset veryfast" : "-preset ultrafast"

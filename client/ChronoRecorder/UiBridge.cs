@@ -43,14 +43,16 @@ namespace ChronoRecorder
         private readonly IUiHost host;
         private readonly Func<IReadOnlyList<string>> onConfigSaved;
         private readonly Action<RecorderConfig> saveConfig;
+        private readonly DiagnosticsCollector? diagnostics;
 
         private readonly Dictionary<string, Func<JObject, Task<object?>>> handlers;
         private readonly HashSet<string> uploading = new();
         private MicMeter? meter;
 
         public UiBridge(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, IUiHost host, Func<IReadOnlyList<string>> onConfigSaved,
-            Action<RecorderConfig>? saveConfig = null)
+            Action<RecorderConfig>? saveConfig = null, DiagnosticsCollector? diagnostics = null)
         {
+            this.diagnostics = diagnostics;
             this.config = config;
             this.recorder = recorder;
             this.library = library;
@@ -83,6 +85,9 @@ namespace ChronoRecorder
                 ["getAudioDevices"] = GetAudioDevices,
                 ["startMicMeter"] = StartMicMeter,
                 ["stopMicMeter"] = _ => { StopMeter(); return Task.FromResult<object?>(new { }); },
+                ["getDiagnostics"] = GetDiagnostics,
+                ["copyDiagnostics"] = CopyDiagnostics,
+                ["openLogsFolder"] = _ => { host.OpenFolder(FileLog.DefaultFolder); return Task.FromResult<object?>(new { }); },
             };
         }
 
@@ -322,6 +327,24 @@ namespace ChronoRecorder
             running?.Dispose();
         }
 
+        // -------------------------------------------------------------- diagnostics
+
+        // The numbers cost something to read (a WMI query for GPU usage, a look at FFmpeg's process), so this is asked for
+        // only while the Diagnostics page is open, and off the window's thread.
+        private async Task<object?> GetDiagnostics(JObject _)
+        {
+            var collector = diagnostics ?? throw new InvalidOperationException("Diagnostics aren't available.");
+            return await Task.Run(() => collector.Collect());
+        }
+
+        private async Task<object?> CopyDiagnostics(JObject _)
+        {
+            var collector = diagnostics ?? throw new InvalidOperationException("Diagnostics aren't available.");
+            string report = await Task.Run(collector.Report);
+            host.CopyToClipboard(report);
+            return new { };
+        }
+
         public void Dispose() => StopMeter();
 
         private Task<object?> SaveSettings(JObject request)
@@ -338,13 +361,19 @@ namespace ChronoRecorder
 
             bool captureChanged = !string.Equals(incoming.GameCapture, config.GameCapture, StringComparison.OrdinalIgnoreCase);
 
+            // These are read when FFmpeg starts, so a change does nothing until the recording is restarted. Restarting is
+            // what the person asked for, and also what makes "automatic" forget a step it learned under the old settings.
+            bool loadChanged = incoming.Fps != config.Fps || incoming.Bitrate != config.Bitrate
+                || !string.Equals(incoming.Encoder, config.Encoder, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(incoming.EncoderLoad, config.EncoderLoad, StringComparison.OrdinalIgnoreCase);
+
             // Edit the live config in place: the recorder and hotkeys hold this same instance.
             config.CopyFrom(incoming);
             saveConfig(config);
             var refused = onConfigSaved();   // hotkeys Windows wouldn't register: another program already uses those keys
-            if (soundChanged || captureChanged) recorder.RestartRecording();   // new devices, volume or capture method start with a fresh recording
+            if (soundChanged || captureChanged || loadChanged) recorder.RestartRecording();   // new devices, volume or capture method start with a fresh recording
             PushStatus();
-            return Task.FromResult<object?>(new { config = JObject.FromObject(config), hotkeyProblems = refused, soundRestarted = soundChanged, captureRestarted = captureChanged });
+            return Task.FromResult<object?>(new { config = JObject.FromObject(config), hotkeyProblems = refused, soundRestarted = soundChanged, captureRestarted = captureChanged, loadRestarted = loadChanged });
         }
     }
 }

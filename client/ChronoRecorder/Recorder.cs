@@ -14,7 +14,7 @@ namespace ChronoRecorder
     /// Records one monitor with a single long-running FFmpeg process that writes rolling segments,
     /// and saves clips by joining the newest segments.
     /// </summary>
-    public class Recorder : IRecorder
+    public class Recorder : IRecorder, IDiagnosticsSource
     {
         private readonly RecorderConfig config;
         private readonly SegmentTracker tracker;
@@ -52,6 +52,21 @@ namespace ChronoRecorder
         // Clips being saved right now. The buffer is not pruned while any is in flight: the export reads those very
         // files, and deleting one halfway through would truncate or fail the clip.
         private int exportsInFlight;
+
+        // How hard recording is working: 0 normal, 1 lighter encoder preset, 2 lighter preset and at most 30 FPS (see LoadPlan).
+        // Chosen when a recording starts, and moved down by the governor if this PC can't keep up.
+        private int loadLevel;
+        private LoadGovernor? governor;
+
+        // What the Diagnostics page shows about the recording in progress.
+        private CaptureSource? currentSource;
+        private int currentBitrateKbps;
+        private DateTime startedUtc;
+        private volatile EncodeStats? latestStats;
+        private bool encoderFailed;            // the hardware encoder wouldn't start; the processor is used until Chrono restarts
+        private string encoderNote = "";
+        private readonly Queue<string> eventLog = new Queue<string>();
+        private const int MaxEvents = 30;
         private RunningGame? autoGame;
         private DateTime nextGameScanUtc = DateTime.MinValue;
         private static readonly TimeSpan GameScanInterval = TimeSpan.FromSeconds(3);
@@ -368,14 +383,26 @@ namespace ChronoRecorder
             var audio = CreateAudioCaptures(clockStart);
             audioCaptures = audio;
 
+            // A fixed setting decides the step outright. "Automatic" begins where the card and earlier runs say, and only ever
+            // moves down within a session: coming back up would lose footage to try, and the governor found this step for a reason.
+            bool automatic = string.Equals(config.EncoderLoad, "auto", StringComparison.OrdinalIgnoreCase);
+            string encoder = ResolveEncoder();
+            int startLevel = LoadPlan.StartLevel(config.EncoderLoad, CardTier, config.LearnedLoadLevel, config.Fps, LoadPlan.HasPresetStep(encoder));
+            loadLevel = automatic ? Math.Max(loadLevel, startLevel) : startLevel;
+            governor = automatic ? new LoadGovernor() : null;
+
+            int fps = EffectiveFps;
+            int bitrate = BitrateSizing.Resolve(config.Bitrate, source.Bounds.Size, fps);
+
             var request = new CaptureRequest(
-                ResolveEncoder(), config.Fps, BitrateSizing.Resolve(config.Bitrate, source.Bounds.Size, config.Fps), source,
+                encoder, fps, bitrate, source,
                 SegmentSeconds, SegmentTracker.NamePattern(config.TempFolder, run),
                 Audio: audio.Select(a => a.Input).ToList(),
                 // Always: the clock is what keeps a second of video a second of real time, sound or no sound.
-                ClockStartUnixSeconds: clockStart);
+                ClockStartUnixSeconds: clockStart,
+                Load: LoadPlan.LoadFor(loadLevel));
 
-            Console.WriteLine($"▶ Recording the {source.Bounds.Width}x{source.Bounds.Height} monitor at {config.Fps}fps via {source.Method}");
+            Note($"▶ Recording {source.Bounds.Width}x{source.Bounds.Height} at {fps} FPS via {source.Method} with {encoder} ({LoadPlan.Describe(loadLevel, config.Fps, LoadPlan.HasPresetStep(encoder)).ToLowerInvariant()} load)");
 
             var process = new Process
             {
@@ -386,6 +413,7 @@ namespace ChronoRecorder
                     UseShellExecute = false,
                     RedirectStandardInput = true,
                     RedirectStandardError = true,
+                    RedirectStandardOutput = true,   // -progress: a block of numbers every two seconds. It must be read, or FFmpeg would stall.
                     CreateNoWindow = true
                 },
                 EnableRaisingEvents = true
@@ -405,6 +433,8 @@ namespace ChronoRecorder
             };
 
             DateTime started = DateTime.UtcNow;
+            var progress = new FfmpegProgressParser();
+            process.OutputDataReceived += (s, e) => OnProgressLine(process, progress, e.Data, started);
             process.Exited += (s, e) => OnFfmpegExited(process, source, started, recentErrors);
 
             try
@@ -417,15 +447,97 @@ namespace ChronoRecorder
                 throw;
             }
             process.BeginErrorReadLine();
+            process.BeginOutputReadLine();
 
             // FFmpeg opens the audio pipes as it starts; the captures wait for that and then feed them.
             foreach (var capture in audio) capture.Start();
 
             ffmpegProcess = process;
             currentRun = run;
+            currentSource = source;
+            currentBitrateKbps = bitrate;
+            startedUtc = started;
+            latestStats = null;
             nativeSize = source.Bounds.Size;
             CaptureResolution = CaptureSizing.Describe(nativeSize);
             isRecording = true;
+        }
+
+        /// <summary>One block of FFmpeg's progress report. Keeps the newest numbers, and lets the governor decide whether this PC is keeping up.</summary>
+        private void OnProgressLine(Process process, FfmpegProgressParser parser, string? line, DateTime started)
+        {
+            var stats = parser.Feed(line, DateTime.UtcNow);
+            if (stats == null || !ReferenceEquals(ffmpegProcess, process)) return;   // not a finished block, or a recording that has been replaced
+
+            latestStats = stats;
+
+            var watching = governor;
+            if (watching == null) return;
+
+            bool presetStep = LoadPlan.HasPresetStep(ResolveEncoder());
+            int highest = LoadPlan.HighestUsefulLevel(config.Fps, presetStep);
+            if (!watching.ShouldStepDown(stats, started, loadLevel, highest, out string reason)) return;
+
+            StepDownLoad(reason);
+        }
+
+        /// <summary>This PC can't keep up: remember the next lighter step, tell the user, and let the monitor restart the recording with it.</summary>
+        private void StepDownLoad(string reason)
+        {
+            loadLevel = LoadPlan.NextLevel(loadLevel, LoadPlan.HasPresetStep(ResolveEncoder()));
+            config.LearnedLoadLevel = loadLevel;
+            try { ConfigManager.Save(config); } catch { /* remembering it is a convenience */ }
+
+            string now = LoadPlan.Describe(loadLevel, config.Fps, LoadPlan.HasPresetStep(ResolveEncoder()));
+            Note($"⚠ This PC couldn't keep up ({reason}). Recording load is now: {now}.");
+            Warning?.Invoke($"This PC couldn't keep up with recording ({reason}), so Chrono lowered how hard it works. Recording load is now: {now}.");
+
+            // Stopping waits on FFmpeg, and this runs on the thread that reads FFmpeg's output, so hand it to another one.
+            // The monitor starts the recording again within a second, at the new step.
+            Task.Run(StopRecording);
+        }
+
+        /// <summary>Everything the Diagnostics page shows about the recording.</summary>
+        public RecorderFacts GetFacts()
+        {
+            var source = currentSource;
+            bool recording = isRecording;
+
+            double buffer = 0;
+            try
+            {
+                var scan = tracker.Scan(recording, currentRun);
+                buffer = scan.Finished.Sum(f => f.DurationSeconds);
+                if (scan.LivePath != null)
+                    buffer += Math.Clamp((DateTime.Now - File.GetCreationTime(scan.LivePath)).TotalSeconds, 0, SegmentSeconds);
+            }
+            catch { /* the folder can change while it is read */ }
+
+            string[] events;
+            lock (eventLog) events = eventLog.ToArray();
+
+            MonitorInfo? screen = recording && source != null ? MonitorLocator.Enumerate().FirstOrDefault(m => m.Bounds == source.Bounds) : null;
+            int pid = 0;
+            try { pid = recording ? ffmpegProcess?.Id ?? 0 : 0; } catch { /* it ended a moment ago */ }
+
+            List<AudioCapture> audio;
+            lock (processLock) audio = audioCaptures.ToList();
+
+            return new RecorderFacts(
+                recording, TargetName, recording ? source?.Method : null, recording ? nativeSize : Size.Empty,
+                config.Fps, EffectiveFps, EncoderForDisplay(),
+                loadLevel, (config.EncoderLoad ?? "auto").ToLowerInvariant(), governor != null, currentBitrateKbps, buffer, pid,
+                recording ? startedUtc : null, recording ? latestStats : null, encoderNote,
+                audio.Select(a => a.Source == AudioSource.SystemSound ? "game sound" : "microphone").ToList(),
+                events, screen?.AdapterName ?? "", screen?.AdapterVendorId ?? 0);
+        }
+
+        /// <summary>The encoder for display. It never starts the detection (which runs FFmpeg), so an idle Chrono shows what it has learned so far.</summary>
+        private string EncoderForDisplay()
+        {
+            if (encoderFailed) return "libx264";
+            if (!string.IsNullOrWhiteSpace(config.Encoder) && !config.Encoder.Equals("auto", StringComparison.OrdinalIgnoreCase)) return config.Encoder;
+            return resolvedEncoder ?? GpuDetector.Detected?.Encoder ?? "libx264";
         }
 
         /// <summary>
@@ -466,6 +578,21 @@ namespace ChronoRecorder
                         var again = RefreshedSource(source);
                         if (again == null) { Console.WriteLine("The game's window is gone; waiting for it."); return; }
                         LaunchFfmpeg(again);
+                        return;
+                    }
+
+                    // The video encoder itself wouldn't start: an out-of-date graphics driver, or another program holding the
+                    // card's encoder sessions. That is not the capture's fault, so don't blame it (moving to screen capture
+                    // would fail the same way); use the processor and say why.
+                    string errors;
+                    lock (recentErrors) errors = string.Join("\n", recentErrors);
+                    if (!forAudio && neverStarted && EncoderProfile.Normalize(ResolveEncoder()) != "libx264" && EncoderProbe.LooksLikeEncoderFailure(errors))
+                    {
+                        encoderFailed = true;
+                        encoderNote = EncoderProbe.Explain(errors);
+                        Note($"⚠ The video encoder wouldn't start: {encoderNote}");
+                        Warning?.Invoke($"The graphics card's video encoder wouldn't start, so Chrono is recording on the processor instead. {encoderNote}");
+                        LaunchFfmpeg(source);
                         return;
                     }
 
@@ -534,18 +661,54 @@ namespace ChronoRecorder
         public void RestartRecording()
         {
             windowCaptureFailed = false;
+
+            // Settings changed, so what "automatic" learned about the old ones no longer applies.
+            loadLevel = 0;
+            encoderFailed = false;
+            encoderNote = GpuDetector.ProbeNote;
+            if (config.LearnedLoadLevel != 0)
+            {
+                config.LearnedLoadLevel = 0;
+                try { ConfigManager.Save(config); } catch { }
+            }
+
             if (isRecording) StopRecording();
         }
 
         private string ResolveEncoder()
         {
+            // An encoder that refused to start stays off for the rest of this run, so it isn't tried again on every restart.
+            if (encoderFailed) return "libx264";
+
             if (string.IsNullOrWhiteSpace(config.Encoder) ||
                 config.Encoder.Equals("auto", StringComparison.OrdinalIgnoreCase))
             {
-                return resolvedEncoder ??= GpuDetector.GetBestEncoder();
+                if (resolvedEncoder == null)
+                {
+                    resolvedEncoder = GpuDetector.GetBestEncoder();
+                    if (GpuDetector.ProbeNote.Length > 0) encoderNote = GpuDetector.ProbeNote;
+                }
+                return resolvedEncoder;
             }
 
             return config.Encoder;
+        }
+
+        /// <summary>The graphics card's tier, for choosing where "automatic" load starts. Modest until a card has been identified.</summary>
+        private GpuDetector.GpuTier CardTier => GpuDetector.Detected?.Tier ?? GpuDetector.GpuTier.Modest;
+
+        /// <summary>The frame rate being recorded: the setting, or 30 at the last step of reduced load.</summary>
+        private int EffectiveFps => LoadPlan.FpsFor(loadLevel, config.Fps);
+
+        /// <summary>A line for the log and for the Diagnostics page's "recent events".</summary>
+        private void Note(string text)
+        {
+            Console.WriteLine(text);
+            lock (eventLog)
+            {
+                eventLog.Enqueue($"{DateTime.Now:HH:mm:ss} {text}");
+                while (eventLog.Count > MaxEvents) eventLog.Dequeue();
+            }
         }
 
         /// <summary>
@@ -666,7 +829,7 @@ namespace ChronoRecorder
                 string encoder = ResolveEncoder();
                 ExportRequest Request(ExportMode mode) => new ExportRequest(
                     concatFilePath, outputPath, plan.SeekSeconds, lengthSeconds, mode,
-                    size ?? nativeSize, encoder, BitrateSizing.Resolve(config.Bitrate, size ?? nativeSize, config.Fps), config.Fps);
+                    size ?? nativeSize, encoder, BitrateSizing.Resolve(config.Bitrate, size ?? nativeSize, EffectiveFps), EffectiveFps);
 
                 if (size == null)
                 {

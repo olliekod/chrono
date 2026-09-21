@@ -147,13 +147,56 @@
     },
     stopMicMeter: async () => { clearInterval(meterTimer); return {}; },
     getRunningApps: async () => ({ apps: ['Discord', 'Risk of rain 2', 'Spotify'] }),
+    getDiagnostics: async () => {
+      const wobble = (base, spread) => (base + (Math.random() - 0.5) * spread).toFixed(1);
+      return {
+        version: '1.0.1', atUtc: new Date().toISOString(),
+        sections: [
+          { title: 'Recording', rows: [
+            { label: 'Status', value: 'Recording Risk of rain 2', tone: '' },
+            { label: 'Capture', value: "Windows Graphics Capture (the game's window)", tone: '' },
+            { label: 'Encoder', value: 'NVIDIA NVENC H.264', tone: '' },
+            { label: 'Input', value: '2560\u00D71440 @ 60', tone: '' },
+            { label: 'Bitrate', value: '19.9 Mbps target, 18.4 Mbps measured', tone: '' },
+            { label: 'Buffer', value: '2 min 20 sec', tone: '' },
+            { label: 'Load', value: 'Normal (automatic)', tone: '' },
+          ] },
+          { title: 'Performance', rows: [
+            { label: 'FFmpeg CPU', value: `${wobble(0.4, 0.2)}% of the processor (${wobble(9, 3)}% of one core)`, tone: 'good' },
+            { label: 'FFmpeg RAM', value: '22 MB', tone: '' },
+            { label: 'Chrono RAM', value: '68 MB', tone: '' },
+            { label: 'GPU video encode', value: '10%', tone: 'good' },
+            { label: "GPU 3D (recording's share)", value: '20%', tone: 'good' },
+            { label: 'Encoding speed', value: '1.00x real time', tone: 'good' },
+            { label: 'Encoded FPS', value: '59.9', tone: '' },
+            { label: 'Dropped frames', value: '0', tone: 'good' },
+            { label: 'Repeated frames', value: '188 (normal while the game isn\'t drawing)', tone: '' },
+          ] },
+          { title: 'This PC', rows: [
+            { label: 'Chrono', value: '1.0.1, running for 42 min 10 sec', tone: '' },
+            { label: 'Windows', value: 'Windows 11 Home (build 26200)', tone: '' },
+            { label: 'Processor', value: '13th Gen Intel(R) Core(TM) i7-13700K (24 threads)', tone: '' },
+            { label: 'Memory', value: '64 GB', tone: '' },
+            { label: 'Graphics', value: 'NVIDIA GeForce RTX 4080, 15.7 GB, driver 576.02', tone: '' },
+            { label: 'Screen', value: '2560\u00D71440 on NVIDIA GeForce RTX 4080', tone: '' },
+            { label: 'FFmpeg', value: '9.0.2-essentials_build-www.gyan.dev', tone: '' },
+            { label: 'Sound', value: 'game sound', tone: '' },
+          ] },
+        ],
+        findings: [{ tone: 'good', text: 'Nothing needs attention.' }],
+        events: ['12:00:01 \u25B6 Recording 2560x1440 at 60 FPS via WindowCapture with h264_nvenc (normal load)'],
+      };
+    },
+    copyDiagnostics: async () => ({}),
+    openLogsFolder: async () => ({}),
     getSettings: async () => ({ config: copy(config), recommended: { kbps: 11000, size: '2560x1440', fps: config.Fps } }),
     getRecommendedBitrate: async ({ fps }) => ({ kbps: Math.round(2560 * 1440 * fps * 0.09 / 500000) * 500, size: '2560x1440', fps }),
     saveSettings: async ({ config: next }) => {
       const soundRestarted = ['RecordAudio', 'RecordMicrophone', 'SpeakerDeviceId', 'MicrophoneDeviceId', 'MicrophoneVolumePercent'].some((k) => next[k] !== config[k]);
       const captureRestarted = next.GameCapture !== undefined && next.GameCapture !== config.GameCapture;
+      const loadRestarted = ['Fps', 'Bitrate', 'Encoder', 'EncoderLoad'].some((k) => next[k] !== undefined && next[k] !== config[k]);
       Object.assign(config, next);
-      return { config: copy(config), hotkeyProblems: [], soundRestarted, captureRestarted };
+      return { config: copy(config), hotkeyProblems: [], soundRestarted, captureRestarted, loadRestarted };
     },
   };
 

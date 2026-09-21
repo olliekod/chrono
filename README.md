@@ -27,6 +27,21 @@ The design keeps the work small:
 - The window is a web page that Chrono only creates while you are looking at it. Closed, it leaves just the tray icon.
 - Resizing happens when you save a clip, so the game never pays for it while you play.
 
+## Slower graphics cards
+
+Chrono was built and measured on an RTX 4080. It has not been run on a GTX 1650 or a 30-series card, so what follows is designed from those measurements, not confirmed on that hardware.
+
+- On a modest card (the GTX 10 and 16 series, RTX 20 series, RTX 3050 and 3060, and integrated graphics, for example) Chrono starts on a faster encoder setting. On the 4080 that took the video encoder from about 10% to 7% for the same file size and almost the same picture.
+- Chrono watches how fast it is encoding. If it measures that your PC can't keep up, it lowers its own load, first with that faster setting and then by recording at 30 FPS, restarts the recording, and tells you. Frame rate is what matters most: 30 FPS halves what recording asks of the graphics card.
+- If the graphics card's encoder won't start (an old NVIDIA driver, or another recording program using it), Chrono records on the processor instead and says why.
+- **Settings > Recording > Recording load** lets you pick Normal or Light yourself. Automatic is the default.
+
+## Diagnostics
+
+The **Diagnostics** page in the sidebar shows what Chrono is doing and what it costs while a game is recorded: the capture method, encoder, resolution and frame rate, bitrate, how much footage is buffered, processor and memory use, how busy the graphics card's video encoder and 3D engine are, encoding speed, dropped frames, and details of your PC. It also lists anything that looks wrong, in plain words.
+
+Press **Copy report** to put it on your clipboard as text you can paste into a chat. The report has no name, folders, server address or key in it. Chrono never sends it anywhere by itself.
+
 ## Install
 
 1. Download `Chrono-Setup.exe` from the [Releases](../../releases) page and run it. It installs for your user only, so it does not ask for admin rights.
@@ -55,6 +70,8 @@ If a game records as a black picture, open **Settings > Recording** and set **Ca
 ## Sharing clips
 
 Uploading needs a Chrono server, run by whoever gave you this app. In **Settings > Uploading**, enter the server address and upload key they send you (keep the key private). You can also set the username shown on your links; it starts as `username`. The address and key are blank in a fresh install. Then open a clip in the Library and press **Upload**. When it finishes, the link is on your clipboard, and uploaded clips keep a **Copy link** button.
+
+Links do not expire. An uploaded clip stays on the server until whoever runs it removes it, and deleting a clip in Chrono removes only the copy on your PC.
 
 ## Sound
 

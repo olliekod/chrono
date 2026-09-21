@@ -35,6 +35,7 @@
               ['path', { d: 'M8 10.5v3M6.5 12h3' }]],
     film2: [['rect', { x: 3, y: 5, width: 18, height: 14, rx: 2 }], ['path', { d: 'M10 9.5v5l4.5-2.500z', fill: 'currentColor' }]],
     alert: [['path', { d: 'M12 4l9 15.500H3z' }], ['path', { d: 'M12 10v4M12 17h.01' }]],
+    pulse: [['path', { d: 'M3 12h4l2.5-6 4 12 2.500-6H21' }]],
   };
 
   /** An <svg class="icon"> for the named icon; 1.25em square by default (set the size with CSS). */

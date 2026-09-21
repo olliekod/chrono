@@ -15,13 +15,15 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
+  const DEFAULTS = { EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
   // ------------------------------------------------------------ small controls
 
   function field(label, control, hint, warn) {
+    // A dropdown is named by the label beside it, for screen readers and for anything that looks for it by name.
+    if (control && control.tagName === 'SELECT' && !control.hasAttribute('aria-label')) control.setAttribute('aria-label', label);
     return h('div', { class: 'field' }, h('label', { text: label }), control, hint ? h('div', { class: `hint ${warn ? 'warn' : ''}`, text: hint }) : null);
   }
 
@@ -80,6 +82,10 @@
         ['window', "The game's own window (recommended)"], ['monitor', 'The whole monitor, only while the game is in front'],
       ], (v) => { config.GameCapture = v; }),
         "Recording the window means nothing else can ever end up in a clip: not Discord, not your desktop, even if you alt-tab or minimize the game. Only switch to the monitor if a game records as a black picture."),
+      field('Recording load', select(config.EncoderLoad || 'auto', [
+        ['auto', 'Automatic (recommended)'], ['normal', 'Normal'], ['light', 'Light'],
+      ], (v) => { config.EncoderLoad = v; }),
+        'Automatic starts lighter on modest graphics cards and, if this PC ever can\'t keep up, lowers itself by using a faster encoder setting and then 30 FPS. It tells you when it does. Choose Normal or Light to fix it yourself. Light uses a faster encoder setting with almost the same picture.'),
       field('Encoder', select(config.Encoder || 'auto', [
         ['auto', 'Automatic (best for this PC)'], ['h264_nvenc', 'NVIDIA graphics card'], ['h264_amf', 'AMD graphics card'], ['h264_qsv', 'Intel graphics'], ['libx264', 'Processor (slow)'],
       ], (v) => { config.Encoder = v; }), 'Leave this on Automatic unless clips fail to save. Recording on your processor is much heavier on the game.'),
@@ -331,6 +337,7 @@
       Chrono.toast('good', 'Settings saved');
       if (result.soundRestarted) Chrono.toast('good', 'Sound settings applied', 'The recording restarted with your new devices and volume.');
       else if (result.captureRestarted) Chrono.toast('good', 'Capture setting applied', 'The recording restarted.');
+      else if (result.loadRestarted) Chrono.toast('good', 'Recording settings applied', 'The recording restarted with your new frame rate, quality or load.');
       if (result.hotkeyProblems && result.hotkeyProblems.length) {
         Chrono.toast('warn', "A hotkey couldn't be set", `Another program already uses these keys: ${result.hotkeyProblems.join(', ')}. Pick different ones.`);
       }

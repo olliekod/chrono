@@ -30,7 +30,8 @@ namespace ChronoRecorder.Tests
             library = new ClipLibrary(config, Path.Combine(root, "library.json"));
             var media = new ClipMedia(config, library, () => "h264_nvenc", Path.Combine(root, "thumbs"));
             bridge = new UiBridge(config, recorder, library, media, new Uploader(new HttpClient(http)) { RetryDelay = _ => TimeSpan.Zero },
-                host, () => { configSavedCallbacks++; return refusedHotkeys; }, _ => saves++);
+                host, () => { configSavedCallbacks++; return refusedHotkeys; }, _ => saves++,
+                diagnostics: new DiagnosticsCollector(new FakeDiagnosticsSource()));
         }
 
         public void Dispose() { try { Directory.Delete(root, true); } catch { } }
@@ -363,12 +364,81 @@ namespace ChronoRecorder.Tests
         public async Task ChangingSomethingUnrelated_DoesNotInterruptTheRecording()
         {
             var sent = JObject.FromObject(config);
-            sent["Fps"] = 120;
+            sent["ShowNotifications"] = !config.ShowNotifications;
+            sent["Username"] = "someone";
 
             var data = await Ok("saveSettings", new { config = sent });
 
             Assert.Equal(0, recorder.AudioRestarts);
             Assert.False((bool?)data["soundRestarted"]);
+            Assert.False((bool?)data["loadRestarted"]);
+        }
+
+        [Theory]
+        [InlineData("Fps", 30)]
+        [InlineData("Bitrate", 15000)]
+        [InlineData("Encoder", "libx264")]
+        [InlineData("EncoderLoad", "light")]
+        public async Task ChangingWhatFfmpegIsStartedWith_RestartsTheRecordingSoItTakesEffect(string setting, object value)
+        {
+            // These are read when FFmpeg starts. Before, a new frame rate did nothing until the next game launch.
+            var sent = JObject.FromObject(config);
+            sent[setting] = JToken.FromObject(value);
+
+            var data = await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal(1, recorder.AudioRestarts);
+            Assert.True((bool?)data["loadRestarted"]);
+        }
+
+        // ---------------------------------------------------------------- diagnostics
+
+        [Fact]
+        public async Task TheDiagnosticsPageGetsItsSections_InTheShapeItReads()
+        {
+            var data = await Ok("getDiagnostics");
+
+            var sections = (JArray)data["sections"]!;
+            Assert.Equal(new[] { "Recording", "Performance", "This PC" }, sections.Select(x => (string)x["title"]!));
+
+            var rows = sections[0]["rows"]!.ToDictionary(r => (string)r["label"]!, r => (string)r["value"]!);
+            Assert.Equal("Recording Deadlock", rows["Status"]);
+            Assert.Equal("NVIDIA NVENC H.264", rows["Encoder"]);
+
+            Assert.NotEmpty((JArray)data["findings"]!);
+            Assert.Equal("Recording started", ((string)data["events"]![0]!).Substring(9));
+            Assert.False(string.IsNullOrEmpty((string?)data["version"]));
+        }
+
+        [Fact]
+        public async Task CopyingTheReport_PutsPlainTextOnTheClipboard_WithNothingPersonalInIt()
+        {
+            await Ok("copyDiagnostics");
+
+            Assert.NotNull(host.Clipboard);
+            Assert.Contains("[Recording]", host.Clipboard);
+            Assert.Contains("Encoder: NVIDIA NVENC H.264", host.Clipboard);
+            Assert.DoesNotContain(config.Username, host.Clipboard);   // the name shown on shared links
+            Assert.DoesNotContain(root, host.Clipboard);              // folders
+        }
+
+        [Fact]
+        public async Task TheLogFolderCanBeOpenedFromTheDiagnosticsPage()
+        {
+            await Ok("openLogsFolder");
+
+            Assert.Equal(FileLog.DefaultFolder, host.Opened);
+        }
+
+        [Fact]
+        public async Task AnEncoderLoadThatIsntOnTheList_IsRefused()
+        {
+            var sent = JObject.FromObject(config);
+            sent["EncoderLoad"] = "turbo";
+
+            string error = await Fails("saveSettings", new { config = sent });
+
+            Assert.Contains("how hard recording", error);
         }
 
         [Theory]
@@ -484,10 +554,21 @@ namespace ChronoRecorder.Tests
         {
             public readonly List<string> Posted = new();
             public string? Clipboard;
+            public string? Opened;
             public void Post(string json) => Posted.Add(json);
             public void CopyToClipboard(string text) => Clipboard = text;
             public void ShowInFolder(string path) { }
-            public void OpenFolder(string path) { }
+            public void OpenFolder(string path) => Opened = path;
+        }
+
+        private sealed class FakeDiagnosticsSource : IDiagnosticsSource
+        {
+            public RecorderFacts GetFacts() => new(
+                Recording: true, Target: "Deadlock", Method: CaptureMethod.WindowCapture, Size: new Size(2560, 1440), ConfiguredFps: 60, EffectiveFps: 60,
+                Encoder: "h264_nvenc", LoadLevel: 0, LoadSetting: "auto", GovernorActive: true, BitrateKbps: 19900, BufferSeconds: 140, FfmpegPid: 0,
+                StartedUtc: DateTime.UtcNow.AddMinutes(-3), Stats: new EncodeStats(9000, 59.9, 120, 0, 0.998, 0, 150, DateTime.UtcNow),
+                EncoderNote: "", AudioSources: new[] { "game sound" }, Events: new[] { "12:00:01 Recording started" },
+                ScreenAdapterName: "NVIDIA GeForce RTX 4080", ScreenAdapterVendorId: 0x10DE);
         }
 
         private sealed record Recorded(string Method, string Url, string Body, string? Authorization);
