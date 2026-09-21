@@ -7,8 +7,8 @@ using System.Text.RegularExpressions;
 
 namespace ChronoRecorder
 {
-    /// <summary>An mp4 found in the clips folder.</summary>
-    public sealed record DiskFile(string FileName, long SizeBytes, DateTime CreatedUtc);
+    /// <summary>An mp4 found in the clips folder. <paramref name="Settling"/>: it was written a moment ago and may still be growing.</summary>
+    public sealed record DiskFile(string FileName, long SizeBytes, DateTime CreatedUtc, bool Settling = false);
 
     /// <summary>
     /// The rules of the library, kept apart from files and windows so they can be tested: which clips exist (the saved
@@ -45,6 +45,9 @@ namespace ChronoRecorder
             foreach (var file in files.Values)
             {
                 if (known.Contains(file.FileName)) continue;
+                // A file that is still being written is not a clip yet. (A clip already in the library is never dropped for
+                // being new: a trim replaces the file, and a fresh file must not make the clip look deleted.)
+                if (file.Settling) continue;
                 result.Add(new ClipRecord
                 {
                     Id = newId(),

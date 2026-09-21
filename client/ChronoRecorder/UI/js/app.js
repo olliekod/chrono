@@ -32,7 +32,7 @@
     const app = root.document.getElementById('app');
     app.textContent = '';
 
-    brandMark = h('span', { class: 'brand-mark' }, h('i'));
+    brandMark = h('span', { class: 'brand-mark' }, h('img', { src: 'img/logo.png', alt: '' }));
     const navItems = [
       ['library', 'Library', 'library'],
       ['recording', 'Recording', 'record'],

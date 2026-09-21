@@ -70,7 +70,7 @@
     }).catch(() => { /* a card without a picture is fine */ });
   }
 
-  function keyLabel(key) { return key === 'Control' ? 'Ctrl' : key; }
+  const keyLabel = (key) => Chrono.hotkeyLabel(key);
 
   function actionButton(clip) {
     if (clip.link) {
@@ -136,27 +136,64 @@
 
   // -------------------------------------------------------------------- page
 
-  let clips = [], query = '', listEl, subEl, offs = [];
+  const DEFAULT_FILTERS = { query: '', game: '', when: 'any', where: 'all' };
+  let clips = [], filters = { ...DEFAULT_FILTERS }, listEl, subEl, filterBar, offs = [];
+
+  function clearFilters() { filters = { ...DEFAULT_FILTERS }; searchBox.value = ''; paintFilters(); render(); }
+  let searchBox;
+
+  function emptyMatches() {
+    return h('div', { class: 'empty' },
+      h('h2', { text: 'No matches' }),
+      h('p', { text: 'No clip fits these filters.' }),
+      h('button', { class: 'btn', onClick: clearFilters }, 'Clear filters'));
+  }
 
   function render() {
     listEl.textContent = '';
-    const { local, uploaded } = Chrono.groupClips(clips, query);
+    const { uploaded, local } = Chrono.groupClips(clips, filters);
 
     if (clips.length === 0) { listEl.append(emptyState(Chrono.state.status)); return; }
-    if (local.length === 0 && uploaded.length === 0) {
-      listEl.append(h('div', { class: 'empty' }, h('h2', { text: 'No matches' }), h('p', { text: `No clip is called “${query}” or recorded from a game with that name.` })));
-      return;
-    }
+    if (uploaded.length === 0 && local.length === 0) { listEl.append(emptyMatches()); return; }
 
+    // Uploaded first: those are the clips you chose to share, so they matter most.
+    if (uploaded.length) {
+      listEl.append(rule('uploaded', 'Uploaded', 'cloud', uploaded.length),
+        h('p', { class: 'section-note', text: 'Anyone with the link can watch these.' }),
+        h('div', { class: 'grid' }, uploaded.map(card)));
+    }
     if (local.length) {
       listEl.append(rule('local', 'On this PC', 'monitor', local.length),
         h('p', { class: 'section-note', text: 'Only you can see these. Open a clip to trim it, rename it, or upload it.' }),
         h('div', { class: 'grid' }, local.map(card)));
     }
-    if (uploaded.length) {
-      listEl.append(rule('uploaded', 'Uploaded', 'cloud', uploaded.length),
-        h('p', { class: 'section-note', text: 'Anyone with the link can watch these.' }),
-        h('div', { class: 'grid' }, uploaded.map(card)));
+  }
+
+  function select(label, value, options, onChange) {
+    const el = h('select', { class: 'filter', 'aria-label': label }, options.map(([v, text]) => h('option', { value: v, text })));
+    el.value = value;
+    el.addEventListener('change', () => onChange(el.value));
+    return el;
+  }
+
+  /** The row of filters under the title bar: where a clip is, which game, and when. */
+  function paintFilters() {
+    filterBar.textContent = '';
+    const segmented = h('div', { class: 'segmented small', role: 'group', 'aria-label': 'Show' },
+      [['all', 'All'], ['uploaded', 'Uploaded'], ['local', 'On this PC']].map(([value, text]) => h('button', {
+        type: 'button', 'aria-pressed': String(filters.where === value),
+        onClick: () => { filters.where = value; paintFilters(); render(); },
+      }, text)));
+
+    const games = Chrono.gameOptions(clips);
+    if (filters.game && !games.includes(filters.game)) filters.game = '';
+    const game = select('Game', filters.game, [['', 'All games'], ...games.map((g) => [g, g])], (v) => { filters.game = v; paintFilters(); render(); });
+    const when = select('Date', filters.when, [['any', 'Any time'], ['today', 'Today'], ['week', 'Last 7 days'], ['month', 'Last 30 days']],
+      (v) => { filters.when = v; paintFilters(); render(); });
+
+    filterBar.append(segmented, game, when);
+    if (Chrono.isFiltering(filters)) {
+      filterBar.append(h('button', { class: 'btn ghost small', type: 'button', onClick: clearFilters }, icon('x'), 'Clear'));
     }
   }
 
@@ -166,6 +203,7 @@
       clips = data.clips;
       subEl.textContent = clips.length ? `${clips.length} clip${clips.length === 1 ? '' : 's'}` : '';
       Chrono.nav.setCount('library', clips.length);
+      paintFilters();
       render();
     } catch (err) {
       listEl.textContent = '';
@@ -182,19 +220,22 @@
       }, { rootMargin: '200px' });
 
       subEl = h('span', { class: 'sub' });
-      const search = h('input', {
+      searchBox = h('input', {
         type: 'search', placeholder: 'Search clips', 'aria-label': 'Search clips',
-        onInput: (e) => { query = e.target.value; render(); },
+        onInput: (e) => { filters.query = e.target.value; paintFilters(); render(); },
       });
-      query = '';
+      filters = { ...DEFAULT_FILTERS };
       listEl = h('div', { class: 'page' });
+      filterBar = h('div', { class: 'filters' });
 
       container.append(
         h('div', { class: 'topbar' }, h('span', { class: 'hash', text: '#' }), h('h1', { text: 'Library' }), subEl,
-          h('span', { class: 'spacer' }), h('div', { class: 'search' }, search, icon('search'))),
+          h('span', { class: 'spacer' }), h('div', { class: 'search' }, searchBox, icon('search'))),
+        filterBar,
         h('div', { class: 'scroll' }, listEl));
 
       offs = [bridge.on('libraryChanged', load)];
+      paintFilters();
       load();
     },
     unmount() {

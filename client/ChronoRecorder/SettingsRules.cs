@@ -26,6 +26,10 @@ namespace ChronoRecorder
             if (c.ApiUrl.Length > 0 && UploadRules.NormalizeServerUrl(c.ApiUrl).Length == 0)
                 return "That server address isn't valid. Use an https:// address like https://your-server.workers.dev.";
 
+            if (c.MicrophoneVolumePercent < 0 || c.MicrophoneVolumePercent > 500) return "The microphone volume must be between 0% and 500%.";
+            c.SpeakerDeviceId = (c.SpeakerDeviceId ?? "").Trim();
+            c.MicrophoneDeviceId = (c.MicrophoneDeviceId ?? "").Trim();
+
             if (c.Fps < 24 || c.Fps > 240) return "The frame rate must be between 24 and 240.";
             if (c.Bitrate != 0 && (c.Bitrate < 1000 || c.Bitrate > 80000)) return "The bitrate must be between 1000 and 80000 kbps, or empty for the recommended one.";
             if (!Regex.IsMatch(c.Resolution ?? "", @"^(native|\d{3,5}x\d{3,5})$", RegexOptions.IgnoreCase)) return "Choose a clip size from the list.";
@@ -49,10 +53,10 @@ namespace ChronoRecorder
                     return $"A clip must be between {MinClipSeconds} and {MaxClipSeconds} seconds ({hotkey.Name}).";
 
                 if (string.IsNullOrWhiteSpace(hotkey.Key)) return $"\"{hotkey.Name}\" needs keys.";
-                try { HotkeyParser.ParseKey(hotkey.Key); }
-                catch (ArgumentException) { return $"Chrono can't use the key \"{hotkey.Key}\" ({hotkey.Name})."; }
 
                 hotkey.Modifiers ??= new List<string>();
+                string? keyProblem = HotkeyParser.Problem(hotkey.Modifiers, hotkey.Key);
+                if (keyProblem != null) return $"{hotkey.Name}: {keyProblem}";
                 uint mods = HotkeyParser.ParseModifiers(hotkey.Modifiers);
                 if (!seen.Add($"{mods}+{hotkey.Key.ToUpperInvariant()}")) return $"Two hotkeys use the same keys ({hotkey.Name}).";
             }

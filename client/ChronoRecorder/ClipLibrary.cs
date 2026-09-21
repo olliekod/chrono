@@ -84,8 +84,8 @@ namespace ChronoRecorder
                         if (!LibraryIndex.IsClipFile(name)) continue;
 
                         var info = new FileInfo(path);
-                        if (DateTime.UtcNow - info.LastWriteTimeUtc < SettleTime) continue;
-                        onDisk.Add(new DiskFile(name, info.Length, info.CreationTimeUtc));
+                        bool settling = DateTime.UtcNow - info.LastWriteTimeUtc < SettleTime;
+                        onDisk.Add(new DiskFile(name, info.Length, info.CreationTimeUtc, settling));
                     }
                 }
 

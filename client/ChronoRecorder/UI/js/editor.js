@@ -35,10 +35,13 @@
 
     const video = h('video', { preload: 'metadata', playsinline: true });
     const bigPlay = h('span', { class: 'big-play' }, icon('play'));
-    const player = h('div', { class: 'player' }, video, h('div', { class: 'click', onClick: togglePlay }), bigPlay);
+    const busyMessage = h('span');
+    const busyOverlay = h('div', { class: 'busy', role: 'status' }, h('span', { class: 'spinner' }), busyMessage);
+    const player = h('div', { class: 'player' }, video, h('div', { class: 'click', onClick: togglePlay, onDblclick: toggleFullscreen }), bigPlay, busyOverlay);
 
     const playBtn = h('button', { class: 'icon-btn', 'aria-label': 'Play', title: 'Play or pause (space)', onClick: togglePlay }, icon('play'));
     const timeText = h('span', { class: 'time', text: '0:00.0 / 0:00.0' });
+    const fullscreenBtn = h('button', { class: 'icon-btn', 'aria-label': 'Full screen', title: 'Full screen (F). Esc to leave.', onClick: toggleFullscreen }, icon('expand'));
     const muteBtn = h('button', { class: 'icon-btn', 'aria-label': 'Mute', onClick: () => { video.muted = !video.muted; paintMute(); } }, icon('volume'));
 
     const strip = h('div', { class: 'strip' });
@@ -72,7 +75,7 @@
         h('div', { class: 'title-field' }, h('label', { for: 'clip-title', text: 'Title' }), titleInput, savedMark), closeBtn),
       h('div', { class: 'modal-body' },
         player,
-        h('div', { class: 'controls' }, playBtn, timeText, h('span', { class: 'spacer' }), muteBtn),
+        h('div', { class: 'controls' }, playBtn, timeText, h('span', { class: 'spacer' }), muteBtn, fullscreenBtn),
         timeline, readout, infoRow, linkHost),
       h('div', { class: 'modal-foot' }, deleteHost, showBtn, h('span', { class: 'spacer' }), saveCopyBtn, saveTrimBtn, mainHost));
 
@@ -181,6 +184,16 @@
 
     // ------------------------------------------------------------- behaviour
     function fail(err) { Chrono.toast('error', 'Something went wrong', err.message); }
+
+    /** Full screen for the video alone: the browser's own controls take over there (seek bar, volume), and Esc leaves it. */
+    function toggleFullscreen() {
+      if (busy) return;
+      if (root.document.fullscreenElement) root.document.exitFullscreen();
+      else if (video.requestFullscreen) video.requestFullscreen().catch(() => {});
+    }
+
+    function onFullscreenChange() { video.controls = !!root.document.fullscreenElement; }
+    root.document.addEventListener('fullscreenchange', onFullscreenChange);
 
     function togglePlay() {
       if (busy) return;
@@ -299,14 +312,25 @@
 
     // ---- release the file: a playing <video> keeps the file open, and Windows won't replace or delete an open file
     function releaseVideo() {
+      // Without a source the video collapses to a small black box; hold the player at its size until the file is back.
+      if (player.offsetHeight > 0) player.style.minHeight = `${player.offsetHeight}px`;
       video.pause();
       video.removeAttribute('src');
       video.load();
     }
 
+    /** Cover the player with a message while something is happening to the file (busy stays true meanwhile). */
+    function showBusy(text) {
+      busyMessage.textContent = text;
+      player.classList.add('is-busy');
+    }
+
+    function hideBusy() { player.classList.remove('is-busy'); }
+
     function attachVideo() {
       // A changed file at the same address must not come from the cache (file: URLs, used only in design mode, take no query).
       video.src = clip.videoUrl.startsWith("file:") ? clip.videoUrl : `${clip.videoUrl}?v=${Date.now()}`;
+      video.addEventListener('loadeddata', () => { player.style.minHeight = ''; }, { once: true });
       video.load();
     }
 
@@ -321,6 +345,7 @@
       if (busy || !Chrono.isTrimmed(start, end, duration)) return;
       busy = true; paintTrim();
       releaseVideo();
+      showBusy('Trimming your clip…');
       const original = { start, end };
       const label = asCopy ? saveCopyBtn : saveTrimBtn;
       const oldLabel = label.textContent;
@@ -346,6 +371,7 @@
         attachVideo();
       } finally {
         busy = false;
+        hideBusy();
         label.textContent = oldLabel;
         if (label === saveTrimBtn) label.prepend(icon('scissors'));
         paintTrim();
@@ -361,12 +387,14 @@
     async function doDelete() {
       busy = true;
       releaseVideo();
+      showBusy('Moving to the Recycle Bin…');
       try {
         await bridge.request('deleteClip', { id: clip.id });
         Chrono.toast('good', 'Moved to the Recycle Bin', clip.title);
         close();
       } catch (err) {
         busy = false;
+        hideBusy();
         attachVideo();
         paintDelete(false);
         fail(err);
@@ -374,9 +402,11 @@
     }
 
     function onKey(e) {
+      if (root.document.fullscreenElement) return;   // in full screen, Esc leaves full screen; it must not also close the clip
       if (e.key === 'Escape') { e.preventDefault(); close(); return; }
       const tag = (root.document.activeElement && root.document.activeElement.tagName) || '';
       if (e.key === ' ' && tag !== 'INPUT' && tag !== 'BUTTON') { e.preventDefault(); togglePlay(); }
+      if ((e.key === 'f' || e.key === 'F') && tag !== 'INPUT' && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); toggleFullscreen(); }
     }
     root.document.addEventListener('keydown', onKey);
 
@@ -395,6 +425,8 @@
       current = null;
       cancelAnimationFrame(raf);
       root.document.removeEventListener('keydown', onKey);
+      root.document.removeEventListener('fullscreenchange', onFullscreenChange);
+      if (root.document.fullscreenElement) root.document.exitFullscreen().catch(() => {});
       offs.forEach((off) => off());
       releaseVideo();
       overlay.remove();

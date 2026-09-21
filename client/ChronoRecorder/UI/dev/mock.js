@@ -39,7 +39,8 @@
   const config = {
     Username: 'Oliver', ApiUrl: 'https://chrono-clips.example.workers.dev', UploadKey: 'secret', Bitrate: 0, Fps: 60, Resolution: '1920x1080',
     Encoder: 'auto', Mode: 2, RecorderEnabled: true, SelectedApplication: '', OutputFolder: 'C:\\Users\\Oliver\\Videos\\Chrono',
-    TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0, ShowNotifications: true, StartWithWindows: true,
+    TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0,
+    SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
     FirstRunCompleted: true,
     Hotkeys: [
       { Name: 'Quick Clip', Key: 'PageUp', Modifiers: ['Control'], ClipLengthSeconds: 30 },
@@ -47,6 +48,7 @@
     ],
   };
 
+  let meterTimer = 0;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const find = (id) => clips.find((c) => c.id === id);
   const copy = (c) => JSON.parse(JSON.stringify(c));
@@ -120,10 +122,38 @@
       status.headline = enabled ? 'Recording Risk of rain 2' : 'Paused'; Chrono.bridge.emit('status', copy(status)); return copy(status);
     },
     setMode: async ({ mode, app }) => { status.mode = mode; status.selectedApplication = app || ''; Chrono.bridge.emit('status', copy(status)); return copy(status); },
+    getAudioDevices: async () => ({
+      speakers: [
+        { id: 's1', name: 'Default System Speakers (Realtek USB Audio)', isDefault: true },
+        { id: 's2', name: 'Speakers (NVIDIA Broadcast)', isDefault: false },
+        { id: 's3', name: 'XV271U M3 (NVIDIA High Definition Audio)', isDefault: false },
+      ],
+      microphones: [
+        { id: 'm1', name: 'Microphone (NVIDIA Broadcast)', isDefault: true },
+        { id: 'm2', name: 'Microphone (2- Maono ProStudio 2x2 Lite)', isDefault: false },
+        { id: 'm3', name: 'Default System Microphone (Realtek USB Audio)', isDefault: false },
+      ],
+    }),
+    startMicMeter: async () => {
+      clearInterval(meterTimer);
+      let t = 0;
+      // A fake voice: bursts of speech at a low level, like a quiet microphone.
+      meterTimer = setInterval(() => {
+        t += 0.07;
+        const speaking = Math.sin(t * 2.1) > -0.2;
+        Chrono.bridge.emit('micLevel', { level: speaking ? 0.02 + 0.05 * Math.abs(Math.sin(t * 9)) : 0.002 });
+      }, 70);
+      return {};
+    },
+    stopMicMeter: async () => { clearInterval(meterTimer); return {}; },
     getRunningApps: async () => ({ apps: ['Discord', 'Risk of rain 2', 'Spotify'] }),
     getSettings: async () => ({ config: copy(config), recommended: { kbps: 11000, size: '2560x1440', fps: config.Fps } }),
     getRecommendedBitrate: async ({ fps }) => ({ kbps: Math.round(2560 * 1440 * fps * 0.09 / 500000) * 500, size: '2560x1440', fps }),
-    saveSettings: async ({ config: next }) => { Object.assign(config, next); return { config: copy(config) }; },
+    saveSettings: async ({ config: next }) => {
+      const soundRestarted = ['RecordAudio', 'RecordMicrophone', 'SpeakerDeviceId', 'MicrophoneDeviceId', 'MicrophoneVolumePercent'].some((k) => next[k] !== config[k]);
+      Object.assign(config, next);
+      return { config: copy(config), hotkeyProblems: [], soundRestarted };
+    },
   };
 
   Chrono.bridge.request = async (action, payload) => {

@@ -94,11 +94,12 @@ namespace ChronoRecorder
         /// <summary>A message inside the window, if it is open (a clip was saved by a hotkey, for example).</summary>
         public void ShowToast(string kind, string title, string? text = null) => Post(() => window?.ShowToast(kind, title, text));
 
-        private void OnConfigSaved()
+        private IReadOnlyList<string> OnConfigSaved()
         {
-            hotkeys.ReloadHotkeys();
+            var refused = hotkeys.ReloadHotkeys();
             ApplyStartWithWindows();
             RefreshStatus();
+            return refused;
         }
 
         // -------------------------------------------------------------------- the tray

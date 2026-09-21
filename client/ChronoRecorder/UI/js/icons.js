@@ -21,6 +21,7 @@
     pause: [['path', { d: 'M7.5 5h3.5v14H7.5zM13 5h3.5v14H13z', fill: 'currentColor' }]],
     scissors: [['circle', { cx: 6, cy: 6.5, r: 2.8 }], ['circle', { cx: 6, cy: 17.5, r: 2.8 }], ['path', { d: 'M8.4 8l11 8.5M8.4 16l11-8.5' }]],
     x: [['path', { d: 'M6 6l12 12M18 6L6 18' }]],
+    expand: [['path', { d: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5' }]],
     search: [['circle', { cx: 11, cy: 11, r: 6 }], ['path', { d: 'M15.5 15.5l5 5' }]],
     volume: [['path', { d: 'M4 10v4h4l5 4V6L8 10z', fill: 'currentColor' }], ['path', { d: 'M16.5 9a4.5 4.5 0 0 1 0 6' }]],
     mute: [['path', { d: 'M4 10v4h4l5 4V6L8 10z', fill: 'currentColor' }], ['path', { d: 'M16 9.5l5 5M21 9.5l-5 5' }]],

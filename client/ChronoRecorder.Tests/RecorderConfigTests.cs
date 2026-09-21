@@ -173,5 +173,27 @@ namespace ChronoRecorder.Tests
             Assert.Equal(RecorderConfig.RecordingMode.Display, current.Mode);
             Assert.False(current.RecorderEnabled);
         }
+
+        [Fact]
+        public void AFreshInstall_HasNoServerAndNoKey_SoNothingCanBeUploadedUntilItIsSetUp()
+        {
+            var fresh = new RecorderConfig();
+
+            Assert.Equal("", fresh.ApiUrl);
+            Assert.Equal("", fresh.UploadKey);
+            Assert.Null(UploadRules.SettingsFrom(fresh));
+        }
+
+        [Fact]
+        public void AFreshInstall_UsesWindowsDefaultSoundDevices_AndOnlyRecordsTheMicrophoneIfAsked()
+        {
+            var fresh = new RecorderConfig();
+
+            Assert.Equal("", fresh.SpeakerDeviceId);
+            Assert.Equal("", fresh.MicrophoneDeviceId);
+            Assert.Equal(100, fresh.MicrophoneVolumePercent);
+            Assert.True(fresh.RecordAudio);
+            Assert.False(fresh.RecordMicrophone);
+        }
     }
 }

@@ -9,6 +9,9 @@ namespace ChronoRecorder
     /// <summary>One raw audio stream that FFmpeg reads from a named pipe.</summary>
     public sealed record AudioInput(string PipePath, int SampleRate, int Channels, AudioSampleFormat Format)
     {
+        /// <summary>How much louder (or quieter) to make it: 1 = as it is, 2.5 = 250%. Applied while mixing, not to the device.</summary>
+        public double Gain { get; init; } = 1.0;
+
         /// <summary>The name FFmpeg's raw-audio demuxer uses for this sample format.</summary>
         public string FfmpegFormat => Format == AudioSampleFormat.Float32 ? "f32le" : "s16le";
 

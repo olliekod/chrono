@@ -88,6 +88,53 @@ test('search matches title or game, ignoring case', () => {
   assert.equal(C.groupClips(clips, '  ').local.length, 2);
 });
 
+const NOW = new Date(2026, 8, 20, 21, 0, 0);
+const at = (daysAgo, hour = 12) => new Date(2026, 8, 20 - daysAgo, hour, 0).toISOString();
+
+test('uploaded clips come first', () => {
+  const { uploaded, local } = C.groupClips([clip('a', 'A', at(1)), clip('b', 'B', at(2), { link: 'https://x/b' })], '', NOW);
+  assert.deepEqual(uploaded.map((c) => c.id), ['b']);
+  assert.deepEqual(local.map((c) => c.id), ['a']);
+  assert.equal(Object.keys(C.groupClips([], '', NOW))[0], 'uploaded');
+});
+
+test('filter by game', () => {
+  const clips = [clip('a', 'A', at(1), { game: 'VALORANT' }), clip('b', 'B', at(1), { game: 'Deadlock' }), clip('c', 'C', at(1))];
+  assert.deepEqual(C.filterClips(clips, { game: 'VALORANT' }, NOW).map((c) => c.id), ['a']);
+  assert.equal(C.filterClips(clips, { game: '' }, NOW).length, 3);
+  assert.deepEqual(C.gameOptions(clips), ['Deadlock', 'VALORANT']);
+});
+
+test('filter by uploaded or on this PC', () => {
+  const clips = [clip('a', 'A', at(1)), clip('b', 'B', at(1), { link: 'https://x/b' })];
+  assert.deepEqual(C.filterClips(clips, { where: 'uploaded' }, NOW).map((c) => c.id), ['b']);
+  assert.deepEqual(C.filterClips(clips, { where: 'local' }, NOW).map((c) => c.id), ['a']);
+  assert.equal(C.filterClips(clips, { where: 'all' }, NOW).length, 2);
+});
+
+test('filter by date', () => {
+  const clips = [clip('today', 'T', at(0, 9)), clip('three', 'T', at(3)), clip('ten', 'T', at(10)), clip('forty', 'T', at(40))];
+  const ids = (when) => C.filterClips(clips, { when }, NOW).map((c) => c.id);
+  assert.deepEqual(ids('today'), ['today']);
+  assert.deepEqual(ids('week'), ['today', 'three']);
+  assert.deepEqual(ids('month'), ['today', 'three', 'ten']);
+  assert.equal(ids('any').length, 4);
+  assert.equal(C.inRange('nonsense', 'week', NOW), false);
+});
+
+test('filters combine, and isFiltering knows when one is on', () => {
+  const clips = [
+    clip('a', 'Triple kill', at(1), { game: 'VALORANT', link: 'https://x/a' }),
+    clip('b', 'Triple kill', at(1), { game: 'VALORANT' }),
+    clip('c', 'Triple kill', at(20), { game: 'VALORANT', link: 'https://x/c' }),
+  ];
+  const f = { query: 'triple', game: 'VALORANT', when: 'week', where: 'uploaded' };
+  assert.deepEqual(C.filterClips(clips, f, NOW).map((c) => c.id), ['a']);
+  assert.equal(C.isFiltering(f), true);
+  assert.equal(C.isFiltering({ query: '  ', game: '', when: 'any', where: 'all' }), false);
+  assert.equal(C.isFiltering(undefined), false);
+});
+
 test('cleanTitle tidies input and falls back when emptied', () => {
   assert.equal(C.cleanTitle('  Triple   kill \n on the boss ', 'old'), 'Triple kill on the boss');
   assert.equal(C.cleanTitle('', 'old'), 'old');
@@ -144,18 +191,27 @@ test('dragging both handles in sequence always leaves a valid range', () => {
 
 // ---------------------------------------------------------------------- hotkeys
 
-test('hotkeyName only accepts keys Chrono can register', () => {
+test('hotkeyName knows every key Chrono can register', () => {
   assert.equal(C.hotkeyName('KeyA'), 'A');
   assert.equal(C.hotkeyName('Digit5'), '5');
   assert.equal(C.hotkeyName('F9'), 'F9');
   assert.equal(C.hotkeyName('F24'), 'F24');
   assert.equal(C.hotkeyName('PageUp'), 'PageUp');
   assert.equal(C.hotkeyName('Space'), 'Space');
+  assert.equal(C.hotkeyName('Backslash'), 'Backslash');      // Ctrl + \ used to be refused
+  assert.equal(C.hotkeyName('Slash'), 'Slash');
+  assert.equal(C.hotkeyName('Comma'), 'Comma');
+  assert.equal(C.hotkeyName('BracketLeft'), 'BracketLeft');
+  assert.equal(C.hotkeyName('Backquote'), 'Backquote');
+  assert.equal(C.hotkeyName('ArrowLeft'), 'ArrowLeft');
+  assert.equal(C.hotkeyName('Tab'), 'Tab');
+  assert.equal(C.hotkeyName('Numpad1'), 'Numpad1');
+  assert.equal(C.hotkeyName('NumpadAdd'), 'NumpadAdd');
+  assert.equal(C.hotkeyName('PrintScreen'), 'PrintScreen');
   assert.equal(C.hotkeyName('F25'), null);
   assert.equal(C.hotkeyName('F0'), null);
-  assert.equal(C.hotkeyName('ArrowLeft'), null);
-  assert.equal(C.hotkeyName('Backquote'), null);
-  assert.equal(C.hotkeyName('Numpad1'), null);
+  assert.equal(C.hotkeyName('ShiftLeft'), null);
+  assert.equal(C.hotkeyName('MediaPlayPause'), null);
 });
 
 test('modifiersOf lists them in the order Chrono saves them', () => {
@@ -163,13 +219,48 @@ test('modifiersOf lists them in the order Chrono saves them', () => {
   assert.deepEqual(C.modifiersOf({}), []);
 });
 
-test('plain letters need a modifier but F-keys and PageUp do not', () => {
-  assert.ok(C.hotkeyProblem([], 'A'));
-  assert.ok(C.hotkeyProblem([], '5'));
-  assert.ok(C.hotkeyProblem([], 'Space'));
-  assert.equal(C.hotkeyProblem(['Control'], 'A'), null);
-  assert.equal(C.hotkeyProblem([], 'F9'), null);
-  assert.equal(C.hotkeyProblem([], 'PageUp'), null);
+test('up to three keys are allowed, four are not', () => {
+  assert.equal(C.hotkeyProblem(['Control'], 'Backslash'), null);
+  assert.equal(C.hotkeyProblem(['Control', 'Shift'], 'Backslash'), null);       // Ctrl + Shift + \
+  assert.equal(C.hotkeyProblem(['Alt', 'Shift'], 'Q'), null);
+  assert.match(C.hotkeyProblem(['Control', 'Alt', 'Shift'], 'A'), /at most 3/);
+  assert.match(C.hotkeyProblem(['Control', 'Alt', 'Shift', 'Win'], 'F9'), /at most 3/);
+});
+
+test('keys people type need a modifier, F-keys and navigation keys do not', () => {
+  for (const key of ['A', '5', 'Space', 'Enter', 'Backslash', 'ArrowLeft', 'Tab', 'Escape', 'Numpad5']) {
+    assert.match(C.hotkeyProblem([], key), /Add Ctrl/, key);
+  }
+  for (const key of ['F1', 'F24', 'PageUp', 'End', 'Insert', 'PrintScreen']) {
+    assert.equal(C.hotkeyProblem([], key), null, key);
+  }
+});
+
+test('hotkey labels read like key caps', () => {
+  assert.equal(C.hotkeyLabel('Control'), 'Ctrl');
+  assert.equal(C.hotkeyLabel('Backslash'), '\\');
+  assert.equal(C.hotkeyLabel('Numpad5'), 'Num 5');
+  assert.equal(C.hotkeyLabel('ArrowUp'), '\u2191');
+  assert.equal(C.hotkeyLabel('F9'), 'F9');
+  assert.equal(C.hotkeyLabel('Q'), 'Q');
+});
+
+test('the level bar works in decibels', () => {
+  assert.equal(C.levelPercent(0, 100), 0);
+  assert.equal(C.levelPercent(1, 100), 100);                                   // full scale
+  assert.ok(Math.abs(C.levelPercent(0.125893, 100) - 70) < 0.1);                // -18 dB: the top of the green zone
+  assert.ok(Math.abs(C.levelPercent(0.501187, 100) - 90) < 0.1);                // -6 dB: the top of the yellow zone
+  assert.equal(C.levelPercent(0.0000001, 100), 0);                             // far below the floor
+});
+
+test('the microphone volume moves the bar, and can push it past full scale', () => {
+  const quiet = C.levelPercent(0.05, 100);
+  assert.ok(C.levelPercent(0.05, 400) > quiet + 20, 'four times louder is well up the bar');
+  assert.ok(C.levelPercent(0.05, 50) < quiet);
+  assert.equal(C.levelPercent(0.6, 500), 100);                                 // capped at the top
+  assert.equal(C.isLoud(0.3, 100), false);
+  assert.equal(C.isLoud(0.3, 400), true);                                      // 1.2 x full scale: the limiter will squash it
+  assert.equal(C.isLoud(0, 500), false);
 });
 
 test('buffer length is the longest hotkey plus two segments', () => {

@@ -19,6 +19,7 @@ namespace ChronoRecorder.Tests
         private readonly UiBridge bridge;
         private int saves;
         private int configSavedCallbacks;
+        private IReadOnlyList<string> refusedHotkeys = Array.Empty<string>();
         private string LastRaw = "";
 
         public UiBridgeTests()
@@ -29,7 +30,7 @@ namespace ChronoRecorder.Tests
             library = new ClipLibrary(config, Path.Combine(root, "library.json"));
             var media = new ClipMedia(config, library, () => "h264_nvenc", Path.Combine(root, "thumbs"));
             bridge = new UiBridge(config, recorder, library, media, new Uploader(new HttpClient(http)) { RetryDelay = _ => TimeSpan.Zero },
-                host, () => configSavedCallbacks++, _ => saves++);
+                host, () => { configSavedCallbacks++; return refusedHotkeys; }, _ => saves++);
         }
 
         public void Dispose() { try { Directory.Delete(root, true); } catch { } }
@@ -322,6 +323,64 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public async Task ChangingTheMicrophoneOrItsVolume_RestartsTheRecordingSoItTakesEffect()
+        {
+            var sent = JObject.FromObject(config);
+            sent["MicrophoneVolumePercent"] = 300;
+
+            var data = await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal(300, config.MicrophoneVolumePercent);
+            Assert.Equal(1, recorder.AudioRestarts);
+            Assert.True((bool?)data["soundRestarted"]);
+        }
+
+        [Fact]
+        public async Task ChangingSomethingUnrelated_DoesNotInterruptTheRecording()
+        {
+            var sent = JObject.FromObject(config);
+            sent["Fps"] = 120;
+
+            var data = await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal(0, recorder.AudioRestarts);
+            Assert.False((bool?)data["soundRestarted"]);
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(501)]
+        public async Task ANonsenseMicrophoneVolume_IsRefused(int percent)
+        {
+            var sent = JObject.FromObject(config);
+            sent["MicrophoneVolumePercent"] = percent;
+
+            Assert.Contains("microphone volume", await Fails("saveSettings", new { config = sent }));
+            Assert.Equal(100, config.MicrophoneVolumePercent);
+        }
+
+        [Fact]
+        public async Task TheAudioDeviceLists_ComeBackAsSpeakersAndMicrophones()
+        {
+            var data = await Ok("getAudioDevices");
+
+            Assert.IsType<JArray>(data["speakers"]);
+            Assert.IsType<JArray>(data["microphones"]);
+            foreach (var d in data["speakers"]!) { Assert.False(string.IsNullOrEmpty((string?)d["id"])); Assert.False(string.IsNullOrEmpty((string?)d["name"])); }
+        }
+
+        [Fact]
+        public async Task HotkeysWindowsRefused_AreReportedBackToThePage()
+        {
+            refusedHotkeys = new[] { "Quick Clip (Control + F8)" };
+            var sent = JObject.FromObject(config);
+
+            var data = await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal(new[] { "Quick Clip (Control + F8)" }, data["hotkeyProblems"]!.Select(t => (string?)t));
+        }
+
+        [Fact]
         public async Task SavingSettingsWithoutHotkeys_KeepsTheExistingOnes()
         {
             var sent = JObject.FromObject(config);
@@ -392,6 +451,8 @@ namespace ChronoRecorder.Tests
             public void SetRecorderEnabled(bool enabled) => Enabled = enabled;
             public void SetRecordingMode(RecorderConfig.RecordingMode mode) => Mode = mode;
             public void SetTrackedApplication(string appName) => Tracked = appName;
+            public int AudioRestarts;
+            public void ApplyAudioSettings() => AudioRestarts++;
             public IReadOnlyList<string> RunningApplications() => new[] { "Discord", "Risk of rain 2" };
         }
 
@@ -465,7 +526,7 @@ namespace ChronoRecorder.Tests
         [Theory]
         [InlineData("", "PageUp", 30, "name")]
         [InlineData("Clip", "", 30, "needs keys")]
-        [InlineData("Clip", "Pause", 30, "can't use the key")]
+        [InlineData("Clip", "Fn", 30, "can't use the key")]
         [InlineData("Clip", "PageUp", 3, "between")]
         [InlineData("Clip", "PageUp", 5000, "between")]
         public void BadHotkeysAreRefused(string name, string key, int seconds, string mention)

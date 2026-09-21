@@ -15,6 +15,8 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
+  const DEFAULTS = { SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
+
   const dirty = () => config && JSON.stringify(config) !== saved;
 
   // ------------------------------------------------------------ small controls
@@ -82,12 +84,97 @@
 
   let hintPainter = () => {};
 
+  // ---- Sound: which devices, and how loud the microphone is ----
+
+  let audioDevices = null;   // { speakers: [...], microphones: [...] } once loaded
+  let meterOn = false, meterHold = 0, offMeter = null;
+
+  /** A device dropdown: "Windows default" first (naming what that is right now), then every device Windows lists. */
+  function deviceSelect(kind, current, onChange) {
+    const el = h('select', { class: 'input', 'aria-label': kind === 'speakers' ? 'Speakers for game sound' : 'Microphone' });
+    const fill = () => {
+      el.textContent = '';
+      const list = (audioDevices && audioDevices[kind]) || [];
+      const def = list.find((d) => d.isDefault);
+      el.append(h('option', { value: '', text: def ? `Windows default: ${def.name}` : 'Windows default' }));
+      for (const d of list) el.append(h('option', { value: d.id, text: d.name }));
+      if (current && !list.some((d) => d.id === current)) el.append(h('option', { value: current, text: 'A device that is not connected (Windows default is used)' }));
+      el.value = current || '';
+    };
+    fill();
+    el.addEventListener('change', () => { onChange(el.value); touched(); if (kind === 'microphones') syncMeter(); });
+    el.refill = fill;
+    return el;
+  }
+
+  function stopMeter() {
+    if (offMeter) { offMeter(); offMeter = null; }
+    if (meterOn) { meterOn = false; bridge.request('stopMicMeter').catch(() => {}); }
+  }
+
+  /** Listen to the chosen microphone while the Sound page is open and the microphone is switched on. */
+  async function syncMeter() {
+    const bar = body && body.querySelector('.meter');
+    if (!bar) return;
+    stopMeter();
+    if (config.RecordMicrophone !== true) { bar.classList.add('off'); bar.querySelector('.fill').style.width = '0'; return; }
+    bar.classList.remove('off');
+    try {
+      await bridge.request('startMicMeter', { deviceId: config.MicrophoneDeviceId || '' });
+      meterOn = true;
+      offMeter = bridge.on('micLevel', ({ level }) => paintMeter(level));
+    } catch (err) {
+      bar.classList.add('off');
+      bar.querySelector('.note').textContent = err.message;
+    }
+  }
+
+  function paintMeter(level) {
+    const bar = body && body.querySelector('.meter');
+    if (!bar) return;
+    const volume = config.MicrophoneVolumePercent === undefined ? 100 : config.MicrophoneVolumePercent;
+    const percent = Chrono.levelPercent(level, volume);
+    meterHold = Math.max(percent, meterHold - 2.5);   // the marker falls slowly so a peak can be read
+    bar.querySelector('.fill').style.width = `${percent}%`;
+    bar.querySelector('.hold').style.left = `${meterHold}%`;
+    bar.classList.toggle('loud', Chrono.isLoud(level, volume));
+    bar.querySelector('.note').textContent = Chrono.isLoud(level, volume)
+      ? 'Too loud: it will be squashed by a limiter. Turn the volume down a little.'
+      : 'Talk normally. The bar should reach the yellow zone on your loudest words.';
+  }
+
   function audioSection() {
-    return [
+    const speakers = deviceSelect('speakers', config.SpeakerDeviceId, (v) => { config.SpeakerDeviceId = v; });
+    const microphone = deviceSelect('microphones', config.MicrophoneDeviceId, (v) => { config.MicrophoneDeviceId = v; });
+
+    if (!audioDevices) {
+      bridge.request('getAudioDevices').then((devices) => { audioDevices = devices; speakers.refill(); microphone.refill(); }).catch(() => {});
+    }
+
+    const volume = h('input', { type: 'range', min: 0, max: 500, step: 10, 'aria-label': 'Microphone volume', class: 'slider' });
+    const volumeText = h('span', { class: 'slider-value' });
+    const setVolume = (v) => { config.MicrophoneVolumePercent = v; volumeText.textContent = `${v}%`; volume.style.setProperty('--fill', `${v / 5}%`); };
+    volume.value = config.MicrophoneVolumePercent === undefined ? 100 : config.MicrophoneVolumePercent;
+    setVolume(parseInt(volume.value, 10));
+    volume.addEventListener('input', () => { setVolume(parseInt(volume.value, 10)); touched(false); });
+
+    const meter = h('div', { class: 'meter' },
+      h('div', { class: 'track' }, h('div', { class: 'fill' }), h('div', { class: 'hold' })),
+      h('div', { class: 'note', text: 'Talk normally. The bar should reach the yellow zone on your loudest words.' }));
+
+    const nodes = [
       h('h2', { text: 'Sound' }),
+      h('p', { class: 'h2-note', text: 'Changing sound settings restarts the current recording, so the last few minutes of footage are dropped.' }),
       toggle('Record game sound', 'Everything you hear: the game, Discord voice chat and music.', config.RecordAudio !== false, (v) => { config.RecordAudio = v; }),
-      toggle('Record my microphone', 'Mix your own voice into clips. Off unless you turn it on.', config.RecordMicrophone === true, (v) => { config.RecordMicrophone = v; }),
+      field('Speakers', speakers, 'Pick the speakers or headphones you hear the game through. This is the same list as Windows Sound settings.'),
+      toggle('Record my microphone', 'Mix your own voice into clips.', config.RecordMicrophone === true, (v) => { config.RecordMicrophone = v; syncMeter(); }),
+      field('Microphone', microphone, 'Choose the microphone to record, for example NVIDIA Broadcast for noise removal.'),
+      h('div', { class: 'field' }, h('label', { text: 'Microphone volume' }), h('div', { class: 'slider-row' }, volume, volumeText), meter,
+        h('div', { class: 'hint', text: 'Quiet microphone? Raise this. It is applied to clips only, not to your Windows settings. Anything that would go past full scale is limited so it never crackles.' })),
+      toggle('Play a sound when a clip is saved', 'A short chime so you know your hotkey worked without looking.', config.PlaySoundOnClip !== false, (v) => { config.PlaySoundOnClip = v; }),
     ];
+    setTimeout(syncMeter, 0);   // after the page is on screen
+    return nodes;
   }
 
   function nextFreeHotkey() {
@@ -113,7 +200,7 @@
           capture.textContent = '';
           const parts = Chrono.hotkeyParts(k);
           if (!parts.length) capture.append('Click to set');
-          parts.forEach((p, i) => capture.append(i ? ' + ' : '', h('span', { class: 'key', text: p === 'Control' ? 'Ctrl' : p })));
+          parts.forEach((p, i) => capture.append(i ? ' + ' : '', h('span', { class: 'key', text: Chrono.hotkeyLabel(p) })));
         };
         showKeys();
         capture.addEventListener('click', () => startListening(k, capture, showKeys));
@@ -163,7 +250,7 @@
 
       const key = Chrono.hotkeyName(e.code);
       const mods = Chrono.modifiersOf(e);
-      const problem = key ? Chrono.hotkeyProblem(mods, key) : 'Chrono can use letters, numbers, F1 to F24, PageUp, PageDown, Home, End, Insert, Delete, Space and Enter.';
+      const problem = key ? Chrono.hotkeyProblem(mods, key) : `Chrono can't use that key. Try a letter, number, punctuation key, arrow, F1 to F24, or a navigation key like PageUp.`;
       if (problem) { Chrono.toast('warn', "That key can't be used", problem); return; }
 
       hotkey.Key = key; hotkey.Modifiers = mods;
@@ -188,8 +275,8 @@
       field('Server address', textInput(config.ApiUrl, (v) => { config.ApiUrl = v; }, { placeholder: 'https://your-server.workers.dev', spellcheck: 'false' }),
         'The address of your Chrono server.'),
       field('Upload key', key, 'The secret your server checks before it accepts a clip. Ask whoever set the server up.'),
-      field('Your name', textInput(config.Username, (v) => { config.Username = v; }, { maxlength: 32 }),
-        'Shown on links you share. Only letters, numbers, - and _ are kept.'),
+      field('Username', textInput(config.Username, (v) => { config.Username = v; }, { maxlength: 32 }),
+        'Shown as the owner of links you share. Only letters, numbers, - and _ are kept.'),
     ];
   }
 
@@ -238,6 +325,10 @@
       config = result.config;
       saved = JSON.stringify(config);
       Chrono.toast('good', 'Settings saved');
+      if (result.soundRestarted) Chrono.toast('good', 'Sound settings applied', 'The recording restarted with your new devices and volume.');
+      if (result.hotkeyProblems && result.hotkeyProblems.length) {
+        Chrono.toast('warn', "A hotkey couldn't be set", `Another program already uses these keys: ${result.hotkeyProblems.join(', ')}. Pick different ones.`);
+      }
       loadRecommended();
       render();
     } catch (err) {
@@ -257,6 +348,7 @@
   function render() {
     if (!body) return;
     stopListening();
+    stopMeter();
     nav.textContent = '';
     nav.append(h('div', { class: 'group', text: 'Chrono' }),
       ...SECTIONS.map(([key, label]) => h('button', { type: 'button', 'aria-current': String(key === section), onClick: () => { section = key; render(); } }, label)));
@@ -278,12 +370,14 @@
         const data = await bridge.request('getSettings');
         config = data.config; recommended = data.recommended; saved = JSON.stringify(config);
         config.Hotkeys = config.Hotkeys || [];
+        // Settings added in newer versions may be missing from an older file; fill them in so they don't count as edits.
+        for (const [key, value] of Object.entries(DEFAULTS)) if (config[key] === undefined) config[key] = value;
         saved = JSON.stringify(config);
         render();
       } catch (err) {
         body.append(h('div', { class: 'empty' }, h('h2', { text: "Couldn't load settings" }), h('p', { text: err.message })));
       }
     },
-    unmount() { stopListening(); body = nav = barHost = null; },
+    unmount() { stopListening(); stopMeter(); body = nav = barHost = null; },
   });
 })(window);

@@ -23,6 +23,10 @@ namespace ChronoRecorder
         // hotkey is looked up here instead of by index into config.Hotkeys.
         private readonly Dictionary<int, HotkeyConfig> registered = new Dictionary<int, HotkeyConfig>();
 
+        /// <summary>Hotkeys from the last registration that Windows refused (another program already owns those keys).</summary>
+        public IReadOnlyList<string> Failures => failures;
+        private readonly List<string> failures = new List<string>();
+
         public event EventHandler<HotkeyPressedEventArgs>? HotkeyPressed;
 
         public class HotkeyPressedEventArgs : EventArgs
@@ -45,6 +49,7 @@ namespace ChronoRecorder
         /// </summary>
         public void RegisterHotkeys()
         {
+            failures.Clear();
             var hotkeys = config.Hotkeys ?? new List<HotkeyConfig>();
             Console.WriteLine($"Registering {hotkeys.Count} hotkeys...");
 
@@ -59,10 +64,11 @@ namespace ChronoRecorder
         /// <summary>
         /// Re-read the hotkeys from config (after the settings were saved).
         /// </summary>
-        public void ReloadHotkeys()
+        public IReadOnlyList<string> ReloadHotkeys()
         {
             UnregisterAll();
             RegisterHotkeys();
+            return Failures;
         }
 
         /// <summary>
@@ -75,7 +81,7 @@ namespace ChronoRecorder
                 uint modifiers = HotkeyParser.ParseModifiers(hotkey.Modifiers);
                 uint vkCode = HotkeyParser.ParseKey(hotkey.Key);
 
-                bool success = RegisterHotKey(messageWindow.Handle, id, modifiers, vkCode);
+                bool success = RegisterHotKey(messageWindow.Handle, id, modifiers | HotkeyParser.ModNoRepeat, vkCode);
 
                 if (success)
                 {
@@ -85,11 +91,13 @@ namespace ChronoRecorder
                 else
                 {
                     Console.WriteLine($"  ✗ Failed: {FormatHotkey(hotkey)} (key already in use by another app)");
+                    failures.Add($"{hotkey.Name} ({FormatHotkey(hotkey)})");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"  ✗ Error: {hotkey.Name} - {ex.Message}");
+                failures.Add($"{hotkey.Name} ({FormatHotkey(hotkey)})");
             }
         }
 

@@ -80,6 +80,29 @@ namespace ChronoRecorder.Tests
             Assert.Single(LibraryIndex.Merge(saved, new[] { File("one.mp4") }, NewId));
         }
 
+        [Fact]
+        public void AClipAlreadyInTheLibrary_SurvivesItsFileBeingRewrittenJustNow()
+        {
+            // Trimming replaces the file, so it is brand new on disk for a few seconds. The clip must keep its id, title and link.
+            var saved = new[] { Record("a", "one.mp4", "My best clip", link: "https://x.test/watch/abc") };
+
+            var merged = LibraryIndex.Merge(saved, new[] { new DiskFile("one.mp4", 4242, DateTime.UtcNow, Settling: true) }, NewId);
+
+            var clip = Assert.Single(merged);
+            Assert.Equal("a", clip.Id);
+            Assert.Equal("My best clip", clip.Title);
+            Assert.Equal("https://x.test/watch/abc", clip.Link);
+            Assert.Equal(4242, clip.SizeBytes);
+        }
+
+        [Fact]
+        public void ANewFileThatIsStillBeingWritten_IsNotAddedYet()
+        {
+            var merged = LibraryIndex.Merge(new ClipRecord[0], new[] { new DiskFile("saving.mp4", 10, DateTime.UtcNow, Settling: true) }, NewId);
+
+            Assert.Empty(merged);
+        }
+
         // ------------------------------------------------------------- names and titles
 
         [Theory]

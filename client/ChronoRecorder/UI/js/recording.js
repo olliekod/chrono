@@ -12,7 +12,7 @@
 
   let host, appTimer, appSelect, appListOpen = false;
 
-  const keyLabel = (key) => (key === 'Control' ? 'Ctrl' : key);
+  const keyLabel = (key) => Chrono.hotkeyLabel(key);
   const keyPills = (keys) => h('span', { class: 'keys' }, keys.map((k) => h('span', { class: 'key', text: keyLabel(k) })));
 
   function heroCopy(s) {

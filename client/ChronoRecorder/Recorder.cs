@@ -206,9 +206,9 @@ namespace ChronoRecorder
 
             var delay = TimeSpan.FromMilliseconds(config.AudioDelayMs);
 
-            void Add(AudioSource source, string what)
+            void Add(AudioSource source, string what, string? deviceId, double gain)
             {
-                var capture = AudioCapture.TryCreate(source, clockStart, delay, out string? problem);
+                var capture = AudioCapture.TryCreate(source, clockStart, delay, deviceId, gain, out string? problem);
                 if (capture == null)
                 {
                     Console.WriteLine($"⚠ No {what}: {problem}");
@@ -216,12 +216,13 @@ namespace ChronoRecorder
                     return;
                 }
 
+                if (capture.FellBackToDefault) Warning?.Invoke($"The {what} you chose isn't available, so Windows' default is being used.");
                 capture.Failed += reason => OnAudioFailed(capture, what, reason);
                 captures.Add(capture);
             }
 
-            Add(AudioSource.SystemSound, "game and system sound");
-            if (config.RecordMicrophone) Add(AudioSource.Microphone, "microphone");
+            Add(AudioSource.SystemSound, "game and system sound", config.SpeakerDeviceId, 1.0);
+            if (config.RecordMicrophone) Add(AudioSource.Microphone, "microphone", config.MicrophoneDeviceId, Math.Clamp(config.MicrophoneVolumePercent, 0, 500) / 100.0);
 
             return captures;
         }
@@ -396,6 +397,15 @@ namespace ChronoRecorder
         public string EncoderName => ResolveEncoder();
 
         public IReadOnlyList<string> RunningApplications() => GetRunningApplications();
+
+        /// <summary>
+        /// New sound settings only take effect when FFmpeg is started, so end the current recording; the monitor restarts it
+        /// within a second with the new devices and volume. (The last minutes of buffered footage are lost.)
+        /// </summary>
+        public void ApplyAudioSettings()
+        {
+            if (isRecording) StopRecording();
+        }
 
         private string ResolveEncoder()
         {

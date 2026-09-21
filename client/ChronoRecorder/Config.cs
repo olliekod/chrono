@@ -84,6 +84,18 @@ namespace ChronoRecorder
         /// <summary>Also record the default microphone. Off by default: it is a privacy decision.</summary>
         public bool RecordMicrophone { get; set; } = false;
 
+        /// <summary>Which speakers/headphones to record the game from (its Windows device id). Empty = Windows' default.</summary>
+        public string SpeakerDeviceId { get; set; } = "";
+
+        /// <summary>Which microphone to record (its Windows device id). Empty = Windows' default.</summary>
+        public string MicrophoneDeviceId { get; set; } = "";
+
+        /// <summary>How loud the microphone is in clips, in percent: 100 = as the device delivers it, 300 = three times louder.</summary>
+        public int MicrophoneVolumePercent { get; set; } = 100;
+
+        /// <summary>A short chime when a hotkey saves a clip, so you know it worked without looking.</summary>
+        public bool PlaySoundOnClip { get; set; } = true;
+
         /// <summary>Trim a constant audio/video offset, in milliseconds (positive delays the sound). Normally 0.</summary>
         public int AudioDelayMs { get; set; } = 0;
 

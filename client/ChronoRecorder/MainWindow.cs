@@ -33,7 +33,13 @@ namespace ChronoRecorder
         private string lastStatus = "";
         private bool ready;
 
-        public MainWindow(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, Action onConfigSaved)
+        // Full screen (the page asks for it when the video goes full screen): remember how the window was, to put it back.
+        private bool fullscreen;
+        private FormBorderStyle borderBeforeFullscreen;
+        private FormWindowState stateBeforeFullscreen;
+        private Rectangle boundsBeforeFullscreen;
+
+        public MainWindow(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, Func<IReadOnlyList<string>> onConfigSaved)
         {
             this.config = config;
             this.library = library;
@@ -41,7 +47,7 @@ namespace ChronoRecorder
             bridge = new UiBridge(config, recorder, library, media, uploader, this, onConfigSaved);
 
             Text = "Chrono";
-            Icon = TrayIcons.For(TrayState.Idle);
+            Icon = TrayIcons.Logo;
             BackColor = Color.FromArgb(49, 51, 56);   // matches the page, so opening doesn't flash white
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(1240, 780);
@@ -115,6 +121,9 @@ namespace ChronoRecorder
                 if (reply != null && !IsDisposed && webView.CoreWebView2 != null) webView.CoreWebView2.PostWebMessageAsJson(reply);
             };
 
+            // The video went full screen inside the page: make the whole window cover the screen too, and undo it on the way out.
+            core.ContainsFullScreenElementChanged += (s, e) => SetFullscreen(core.ContainsFullScreenElement);
+
             core.NavigationCompleted += (s, e) =>
             {
                 ready = true;
@@ -122,6 +131,28 @@ namespace ChronoRecorder
             };
 
             core.Navigate(StartUrl);
+        }
+
+        private void SetFullscreen(bool on)
+        {
+            if (on == fullscreen || IsDisposed) return;
+            fullscreen = on;
+
+            if (on)
+            {
+                borderBeforeFullscreen = FormBorderStyle;
+                stateBeforeFullscreen = WindowState;
+                boundsBeforeFullscreen = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+                if (WindowState == FormWindowState.Maximized) WindowState = FormWindowState.Normal;
+                FormBorderStyle = FormBorderStyle.None;
+                Bounds = Screen.FromControl(this).Bounds;
+            }
+            else
+            {
+                FormBorderStyle = borderBeforeFullscreen;
+                Bounds = boundsBeforeFullscreen;
+                WindowState = stateBeforeFullscreen;
+            }
         }
 
         // ------------------------------------------------------------ pushing to the page
@@ -187,6 +218,7 @@ namespace ChronoRecorder
         {
             if (disposing)
             {
+                bridge.Dispose();   // stops the microphone level meter if Settings left it running
                 library.Changed -= OnLibraryChanged;   // the library outlives the window
                 statusTimer.Dispose();
                 libraryTimer.Dispose();

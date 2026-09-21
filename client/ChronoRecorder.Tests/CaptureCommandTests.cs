@@ -127,8 +127,56 @@ namespace ChronoRecorder.Tests
 
             Assert.Contains(@"-i \\.\pipe\chrono_sys", args);
             Assert.Contains(@"-i \\.\pipe\chrono_mic", args);
-            Assert.Contains("-filter_complex \"[1:a][2:a]amix=inputs=2:duration=longest:normalize=0[aout]\"", args);
+            Assert.Contains("-filter_complex \"[1:a][2:a]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.97:level=0[aout]\"", args);
             Assert.Contains("-map 0:v:0 -map \"[aout]\"", args);
+        }
+
+        [Fact]
+        public void ALouderMicrophone_IsBoostedBeforeMixing_AndTheMixIsLimited()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("sys"), Pipe("mic", rate: 44100, format: AudioSampleFormat.Pcm16) with { Gain = 3.5 }));
+
+            Assert.Contains("[2:a]volume=3.5[g2];[1:a][g2]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.97:level=0[aout]", args);
+            Assert.DoesNotContain("volume=1", args);   // the game sound is untouched
+        }
+
+        [Fact]
+        public void AGainOfOne_AddsNoVolumeFilter()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("sys") with { Gain = 1.0 }, Pipe("mic") with { Gain = 1.0 }));
+
+            Assert.DoesNotContain("volume=", args);
+        }
+
+        [Fact]
+        public void ASingleBoostedSource_GetsVolumeAndALimiter()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("mic") with { Gain = 2 }));
+
+            Assert.Contains("-filter_complex \"[1:a]volume=2,alimiter=limit=0.97:level=0[aout]\" -map 0:v:0 -map \"[aout]\"", args);
+        }
+
+        [Fact]
+        public void AQuieterMicrophone_IsSupportedToo()
+        {
+            string args = CaptureCommand.Build(WithAudio(Pipe("sys"), Pipe("mic") with { Gain = 0.4 }));
+
+            Assert.Contains("[2:a]volume=0.4[g2]", args);
+        }
+
+        [Fact]
+        public void TheGainIsWrittenTheSameWayInAnyCulture()
+        {
+            var previous = System.Globalization.CultureInfo.CurrentCulture;
+            try
+            {
+                System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+                string args = CaptureCommand.Build(WithAudio(Pipe("sys"), Pipe("mic") with { Gain = 2.5 }));
+
+                Assert.Contains("volume=2.5", args);
+                Assert.DoesNotContain("volume=2,5", args);
+            }
+            finally { System.Globalization.CultureInfo.CurrentCulture = previous; }
         }
 
         [Fact]

@@ -62,10 +62,10 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   let { window } = dom; let doc = window.document;
   await until(() => doc.querySelectorAll('.card').length === 7, '7 cards');
   const rules = [...doc.querySelectorAll('.section-rule')].map((r) => r.textContent.replace(/\s+/g, ' ').trim());
-  check('two sections with clear dividers', rules.length === 2 && /On this PC/.test(rules[0]) && /Uploaded/.test(rules[1]));
-  check('4 not uploaded, 3 uploaded', doc.querySelectorAll('.grid')[0].children.length === 4 && doc.querySelectorAll('.grid')[1].children.length === 3);
-  check('every uploaded card has a Copy link button', [...doc.querySelectorAll('.grid')[1].querySelectorAll('.card-actions .btn')].every((b) => /Copy link/.test(b.textContent)));
-  check('every other card has an Upload button', [...doc.querySelectorAll('.grid')[0].querySelectorAll('.card-actions .btn')].every((b) => /Upload/.test(b.textContent)));
+  check('two sections with clear dividers, uploaded on top', rules.length === 2 && /Uploaded/.test(rules[0]) && /On this PC/.test(rules[1]));
+  check('3 uploaded above, 4 on this PC below', doc.querySelectorAll('.grid')[0].children.length === 3 && doc.querySelectorAll('.grid')[1].children.length === 4);
+  check('every uploaded card has a Copy link button', [...doc.querySelectorAll('.grid')[0].querySelectorAll('.card-actions .btn')].every((b) => /Copy link/.test(b.textContent)));
+  check('every other card has an Upload button', [...doc.querySelectorAll('.grid')[1].querySelectorAll('.card-actions .btn')].every((b) => /Upload/.test(b.textContent)));
   check('sidebar shows what is recording', /Recording Risk of rain 2/.test(doc.querySelector('.status-panel').textContent));
   check('library count in the nav', doc.querySelector('.nav-item .count').textContent === '7');
 
@@ -76,8 +76,30 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('search with no match says so', /No matches/.test(doc.querySelector('.empty').textContent));
   search.value = ''; search.dispatchEvent(new window.Event('input', { bubbles: true }));
 
+  // ---------------------------------------------------------------- filters
+  const seg = (label) => [...doc.querySelectorAll('.filters .segmented button')].find((b) => b.textContent === label);
+  const selectByLabel = (label) => doc.querySelector(`.filters select[aria-label="${label}"]`);
+  const choose = (el, value) => { el.value = value; el.dispatchEvent(new window.Event('change', { bubbles: true })); };
+
+  seg('Uploaded').click();
+  check('the Uploaded filter shows only uploaded clips', doc.querySelectorAll('.card').length === 3 && doc.querySelectorAll('.section-rule').length === 1);
+  seg('On this PC').click();
+  check('the On this PC filter shows only the rest', doc.querySelectorAll('.card').length === 4 && /On this PC/.test(doc.querySelector('.section-rule').textContent));
+  seg('All').click();
+  check('the game filter lists every game', [...selectByLabel('Game').options].map((o) => o.text).join('|') === 'All games|Deadlock|Deep Rock Galactic|Risk of rain 2|VALORANT');
+  choose(selectByLabel('Game'), 'VALORANT');
+  check('filtering by game', doc.querySelectorAll('.card').length === 2 && [...doc.querySelectorAll('.card-title')].every((t) => /sheriff|Clutch/.test(t.textContent)));
+  check('a Clear button appears while filtering', !!doc.querySelector('.filters .btn'));
+  choose(selectByLabel('Date'), 'today');
+  check('game and date filters combine', doc.querySelectorAll('.card').length === 0 && /No matches/.test(doc.querySelector('.empty').textContent));
+  doc.querySelector('.empty .btn').click();
+  check('Clear filters brings everything back', doc.querySelectorAll('.card').length === 7 && !doc.querySelector('.filters .btn'));
+  choose(selectByLabel('Date'), 'week');
+  check('filtering by date (last 7 days)', doc.querySelectorAll('.card').length === 6);
+  choose(selectByLabel('Date'), 'any');
+
   // ------------------------------------------------------------------ editor
-  doc.querySelectorAll('.card')[0].click();
+  [...doc.querySelectorAll('.card')].find((c) => /Triple kill on the boss/.test(c.textContent)).click();
   const modal = await until(() => doc.querySelector('.modal'), 'editor opens');
   const title = doc.querySelector('#clip-title');
   check('the title box holds the clip title', title.value === 'Triple kill on the boss');
@@ -85,8 +107,17 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('trim buttons hidden until trimmed', [...doc.querySelectorAll('.modal-foot .btn')].filter((b) => /Save trim|Save as new clip/.test(b.textContent)).every((b) => b.hidden));
   check('an Upload button is offered', [...doc.querySelectorAll('.modal-foot .btn')].some((b) => /Upload/.test(b.textContent)));
 
-  // give the video its length (the mock has no real file)
   const video = doc.querySelector('video');
+  let fullscreenAsked = 0;
+  video.requestFullscreen = () => { fullscreenAsked++; return Promise.resolve(); };
+  [...doc.querySelectorAll('.controls button')].find((b) => b.getAttribute('aria-label') === 'Full screen').click();
+  check('the video has a full screen button', fullscreenAsked === 1);
+  doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+  check('F also goes full screen', fullscreenAsked === 2);
+  doc.querySelector('.player .click').dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+  check('double-clicking the video goes full screen too', fullscreenAsked === 3);
+
+  // give the video its length (the mock has no real file)
   Object.defineProperty(video, 'duration', { value: 20.4, configurable: true });
   video.dispatchEvent(new window.Event('loadedmetadata'));
   await sleep(30);
@@ -181,6 +212,28 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Reset/.test(b.textContent)).click();
   check('Reset clears the bar and the change', !doc.querySelector('.unsaved') && doc.querySelector('input[type=number]').value === '');
 
+  // ---- Sound
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /Sound/.test(b.textContent)).click();
+  await until(() => doc.querySelector('select[aria-label="Microphone"]').options.length > 1, 'devices listed');
+  const micSelect = doc.querySelector('select[aria-label="Microphone"]');
+  const speakerSelect = doc.querySelector('select[aria-label="Speakers for game sound"]');
+  check('the microphone list is the Windows list, default first', /Windows default: Microphone \(NVIDIA Broadcast\)/.test(micSelect.options[0].text)
+    && [...micSelect.options].some((o) => /Maono/.test(o.text)));
+  check('the speaker list names the default output', /Windows default: Default System Speakers/.test(speakerSelect.options[0].text));
+  check('nothing is unsaved just from opening Sound', !doc.querySelector('.unsaved'));
+  await until(() => doc.querySelector('.meter .fill').style.width !== '' && doc.querySelector('.meter .fill').style.width !== '0', 'meter moves', 3000);
+  check('the microphone level bar is live', true);
+  const slider = doc.querySelector('input.slider');
+  slider.value = '300'; slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+  check('the volume slider shows its percentage and marks the page unsaved', doc.querySelector('.slider-value').textContent === '300%' && !!doc.querySelector('.unsaved'));
+  micSelect.value = 'm2'; micSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+  await until(() => /Sound settings applied/.test(doc.querySelector('.toasts').textContent), 'sound applied toast');
+  check('saving sound settings says the recording restarted', true);
+  check('the chosen microphone is kept', doc.querySelector('select[aria-label="Microphone"]').value === 'm2');
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /Uploading/.test(b.textContent)).click();
+  check('the uploading page calls it Username', [...doc.querySelectorAll('.field > label')].some((l) => l.textContent === 'Username') && ![...doc.querySelectorAll('label')].some((l) => l.textContent === 'Your name'));
+
   [...doc.querySelectorAll('.settings-nav button')].find((b) => /Hotkeys/.test(b.textContent)).click();
   await until(() => doc.querySelector('.hotkey-row'), 'hotkey rows');
   check('two hotkeys are listed', doc.querySelectorAll('.hotkey-row').length === 2);
@@ -190,10 +243,24 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   capture.click();
   check('clicking a key box starts listening', /Press the keys/.test(capture.textContent));
   window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'KeyQ', key: 'q', bubbles: true }));
-  check('a plain letter is refused with a reason', /Add Ctrl, Alt or Shift/.test(doc.querySelector('.toasts').textContent) && /Press the keys/.test(doc.querySelectorAll('.capture')[2].textContent));
+  check('a plain letter is refused with a reason', /Add Ctrl, Alt, Shift or Win/.test(doc.querySelector('.toasts').textContent) && /Press the keys/.test(doc.querySelectorAll('.capture')[2].textContent));
   window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'KeyQ', key: 'q', ctrlKey: true, bubbles: true }));
   await until(() => /Q/.test(doc.querySelectorAll('.capture')[2].textContent), 'key captured');
   check('Ctrl + Q is captured', /Ctrl/.test(doc.querySelectorAll('.capture')[2].textContent));
+  doc.querySelectorAll('.capture')[2].click();
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'Backslash', key: '\\', ctrlKey: true, shiftKey: true, bubbles: true }));
+  await until(() => /Shift/.test(doc.querySelectorAll('.capture')[2].textContent) && /\\/.test(doc.querySelectorAll('.capture')[2].textContent), 'ctrl+shift+backslash captured');
+  check('Ctrl + Shift + \\ is accepted', /Ctrl/.test(doc.querySelectorAll('.capture')[2].textContent) && doc.querySelectorAll('.capture')[2].querySelectorAll('.key').length === 3);
+  doc.querySelectorAll('.capture')[2].click();
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'Backslash', key: '\\', ctrlKey: true, bubbles: true }));
+  await until(() => doc.querySelectorAll('.capture')[2].querySelectorAll('.key').length === 2, 'ctrl+backslash captured');
+  check('Ctrl + \\ is accepted', true);
+  doc.querySelectorAll('.capture')[2].click();
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'KeyQ', key: 'q', ctrlKey: true, altKey: true, shiftKey: true, bubbles: true }));
+  check('four keys are refused', /at most 3/.test(doc.querySelector('.toasts').textContent) && /Press the keys/.test(doc.querySelectorAll('.capture')[2].textContent));
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'Slash', key: '/', altKey: true, bubbles: true }));
+  await until(() => doc.querySelectorAll('.capture')[2].querySelectorAll('.key').length === 2, 'alt+slash captured');
+  check('punctuation keys work as hotkeys', true);
   // a duplicate combination blocks saving
   doc.querySelectorAll('.capture')[1].click();
   window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'PageUp', key: 'PageUp', ctrlKey: true, bubbles: true }));
@@ -205,7 +272,8 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   await until(() => !doc.querySelector('.hint.warn'), 'warning cleared');
   [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
   await until(() => /Settings saved/.test(doc.querySelector('.toasts').textContent), 'saved toast');
-  check('saving works and the bar goes away', !doc.querySelector('.unsaved'));
+  await sleep(100);
+  check('saving works and the bar goes away' + (doc.querySelector('.unsaved') ? ' (bar says: ' + doc.querySelector('.unsaved').textContent + ')' : ''), !doc.querySelector('.unsaved'));
 
   // ------------------------------------------------------ empty library / paused
   const empty = await open('?state=empty');

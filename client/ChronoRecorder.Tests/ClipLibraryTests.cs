@@ -53,7 +53,7 @@ namespace ChronoRecorder.Tests
         public void RefreshLeavesOutFilesStillBeingWrittenAndTemporaryFiles()
         {
             Clip("done.mp4");
-            Clip("just-now.mp4", secondsOld: 0);
+            Clip("just-now.mp4", secondsOld: 0);   // a clip that is still being saved: not listed until it settles
             Clip("concat_abc.mp4");
             Clip("trimming.abc.part.mp4");
             File.WriteAllText(Path.Combine(clips, "notes.txt"), "x");
@@ -62,6 +62,24 @@ namespace ChronoRecorder.Tests
             library.Refresh();
 
             Assert.Equal(new[] { "done.mp4" }, library.Snapshot().Select(c => c.FileName));
+        }
+
+        [Fact]
+        public void ARefreshRightAfterATrimReplacedTheFile_KeepsTheClipAndItsTitle()
+        {
+            string path = Clip("Quick Clip_2026-09-20_19-57-08.mp4", 500);
+            var library = NewLibrary();
+            library.Refresh();
+            string id = library.Snapshot().Single().Id;
+            library.Rename(id, "Triple kill");
+
+            File.WriteAllBytes(path, new byte[200]);          // the trim wrote a smaller file, just now
+            library.Refresh();
+
+            var clip = Assert.Single(library.Snapshot());
+            Assert.Equal(id, clip.Id);
+            Assert.Equal("Triple kill", clip.Title);
+            Assert.Equal(200, clip.SizeBytes);
         }
 
         [Fact]

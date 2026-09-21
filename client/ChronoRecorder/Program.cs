@@ -62,6 +62,9 @@ namespace ChronoRecorder
 
             tray.ApplyStartWithWindows();
 
+            if (hotkeyManager.Failures.Count > 0)
+                notifier.Error("A hotkey couldn't be set", $"Another program already uses the keys for: {string.Join(", ", hotkeyManager.Failures)}. Change them in Settings.");
+
             // Clips saved before the library existed are picked up, and their lengths read, without holding anything up.
             Task.Run(() =>
             {
@@ -111,6 +114,7 @@ namespace ChronoRecorder
                 }
 
                 Console.WriteLine($"Saving last {e.Hotkey.ClipLengthSeconds} seconds...");
+                if (config.PlaySoundOnClip) ClipCue.Play(config.SpeakerDeviceId);   // straight away, so you know the key press counted
                 string? game = recorder.CurrentGameName;
 
                 // Joining segments spawns FFmpeg; keep the UI responsive while it runs.

@@ -23,7 +23,7 @@ namespace ChronoRecorder
     /// <c>{requestId, action, ...}</c> and gets <c>{requestId, ok, data}</c> or <c>{requestId, ok:false, error}</c> back; Chrono can also push
     /// events <c>{event, data}</c> (library changed, status changed, upload progress).
     /// </summary>
-    public sealed class UiBridge
+    public sealed class UiBridge : IDisposable
     {
         public const string ThumbsBaseUrl = "https://thumbs.chrono/";
         public const string ClipsBaseUrl = "https://clips.chrono/";
@@ -41,13 +41,14 @@ namespace ChronoRecorder
         private readonly ClipMedia media;
         private readonly Uploader uploader;
         private readonly IUiHost host;
-        private readonly Action onConfigSaved;
+        private readonly Func<IReadOnlyList<string>> onConfigSaved;
         private readonly Action<RecorderConfig> saveConfig;
 
         private readonly Dictionary<string, Func<JObject, Task<object?>>> handlers;
         private readonly HashSet<string> uploading = new();
+        private MicMeter? meter;
 
-        public UiBridge(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, IUiHost host, Action onConfigSaved,
+        public UiBridge(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, IUiHost host, Func<IReadOnlyList<string>> onConfigSaved,
             Action<RecorderConfig>? saveConfig = null)
         {
             this.config = config;
@@ -79,6 +80,9 @@ namespace ChronoRecorder
                 ["getSettings"] = GetSettings,
                 ["getRecommendedBitrate"] = GetRecommendedBitrate,
                 ["saveSettings"] = SaveSettings,
+                ["getAudioDevices"] = GetAudioDevices,
+                ["startMicMeter"] = StartMicMeter,
+                ["stopMicMeter"] = _ => { StopMeter(); return Task.FromResult<object?>(new { }); },
             };
         }
 
@@ -293,6 +297,33 @@ namespace ChronoRecorder
         private Task<object?> GetRecommendedBitrate(JObject request)
             => Task.FromResult<object?>(Recommended(request.Value<int?>("fps") ?? config.Fps));
 
+        private async Task<object?> GetAudioDevices(JObject _)
+        {
+            // Core Audio is COM; ask off the UI thread so a slow driver can't freeze the window.
+            var (speakers, microphones) = await Task.Run(() => (AudioDevices.List(NAudio.CoreAudioApi.DataFlow.Render), AudioDevices.List(NAudio.CoreAudioApi.DataFlow.Capture)));
+            return new { speakers, microphones };
+        }
+
+        private async Task<object?> StartMicMeter(JObject request)
+        {
+            StopMeter();
+            string? id = request.Value<string>("deviceId");
+            string? problem = null;
+            var started = await Task.Run(() => MicMeter.TryStart(id, level => PushEvent("micLevel", new { level }), out problem));
+            if (started == null) throw new InvalidOperationException(problem ?? "Couldn't listen to the microphone.");
+            meter = started;
+            return new { };
+        }
+
+        private void StopMeter()
+        {
+            var running = meter;
+            meter = null;
+            running?.Dispose();
+        }
+
+        public void Dispose() => StopMeter();
+
         private Task<object?> SaveSettings(JObject request)
         {
             var incoming = request["config"]?.ToObject<RecorderConfig>() ?? throw new InvalidOperationException("No settings were sent.");
@@ -301,12 +332,17 @@ namespace ChronoRecorder
             string? problem = SettingsRules.ValidateAndTidy(incoming);
             if (problem != null) throw new InvalidOperationException(problem);
 
+            bool soundChanged = incoming.RecordAudio != config.RecordAudio || incoming.RecordMicrophone != config.RecordMicrophone
+                || incoming.SpeakerDeviceId != config.SpeakerDeviceId || incoming.MicrophoneDeviceId != config.MicrophoneDeviceId
+                || incoming.MicrophoneVolumePercent != config.MicrophoneVolumePercent;
+
             // Edit the live config in place: the recorder and hotkeys hold this same instance.
             config.CopyFrom(incoming);
             saveConfig(config);
-            onConfigSaved();
+            var refused = onConfigSaved();   // hotkeys Windows wouldn't register: another program already uses those keys
+            if (soundChanged) recorder.ApplyAudioSettings();   // new devices and volume start with a fresh recording
             PushStatus();
-            return Task.FromResult<object?>(new { config = JObject.FromObject(config) });
+            return Task.FromResult<object?>(new { config = JObject.FromObject(config), hotkeyProblems = refused, soundRestarted = soundChanged });
         }
     }
 }

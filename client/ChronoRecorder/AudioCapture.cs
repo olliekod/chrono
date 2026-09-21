@@ -49,6 +49,9 @@ namespace ChronoRecorder
         /// <summary>Feed sound in directly, as if the device had captured it. For tests and diagnostics.</summary>
         public void PushForDiagnostics(byte[] buffer) => feeder.Push(buffer, buffer.Length);
 
+        /// <summary>True when the device asked for wasn't there and Windows' default was used instead.</summary>
+        public bool FellBackToDefault { get; private set; }
+
         /// <summary>The device went away or stopped. The recording can carry on without this source.</summary>
         public event Action<string>? Failed;
 
@@ -56,15 +59,25 @@ namespace ChronoRecorder
         /// Opens the device. Returns null, with a reason fit to show the user, if there is no usable device
         /// or its format isn't one we can pass on.
         /// </summary>
-        public static AudioCapture? TryCreate(AudioSource source, double clockStartUnixSeconds, TimeSpan delay, out string? problem)
+        /// <param name="deviceId">The device to record, as saved in the settings; empty means Windows' default.</param>
+        /// <param name="gain">1 = as it is; 2.5 = 250% (applied when the sounds are mixed).</param>
+        public static AudioCapture? TryCreate(AudioSource source, double clockStartUnixSeconds, TimeSpan delay, string? deviceId, double gain, out string? problem)
         {
             problem = null;
             IWaveIn? capture = null;
             NamedPipeServerStream? pipe = null;
+            bool fellBack = false;
 
             try
             {
-                capture = source == AudioSource.SystemSound ? new WasapiLoopbackCapture() : new WasapiCapture();
+                var device = AudioDevices.Open(source == AudioSource.SystemSound ? DataFlow.Render : DataFlow.Capture, deviceId, out fellBack);
+                if (device == null)
+                {
+                    problem = $"there is no {Describe(source)} on this PC";
+                    return null;
+                }
+
+                capture = source == AudioSource.SystemSound ? new WasapiLoopbackCapture(device) : new WasapiCapture(device);
 
                 // Extensible headers wrap the real format; unwrap so we can see whether it is float or PCM.
                 WaveFormat format = capture.WaveFormat is WaveFormatExtensible ext ? ext.ToStandardWaveFormat() : capture.WaveFormat;
@@ -85,7 +98,7 @@ namespace ChronoRecorder
                 // how the feeder knows when to start the audio clock (see AudioFeeder).
                 pipe = new NamedPipeServerStream(pipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 4096);
 
-                return new AudioCapture(source, capture, pipe, input, clockStartUnixSeconds, delay);
+                return new AudioCapture(source, capture, pipe, input with { Gain = gain }, clockStartUnixSeconds, delay) { FellBackToDefault = fellBack };
             }
             catch (Exception ex)
             {

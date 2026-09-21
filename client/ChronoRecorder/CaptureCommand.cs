@@ -69,14 +69,23 @@ namespace ChronoRecorder
                 parts.Add($"-f {input.FfmpegFormat} -ar {input.SampleRate} -ac {input.Channels} -i {input.PipePath}");
 
             // ---- stream selection
+            // Louder sources are limited afterwards: summing a boosted microphone with game sound can go past full scale,
+            // and clipping is harsh where a limiter is not (measured: +6.4 dB peak without it, -0.3 dB with it).
+            const string Limiter = "alimiter=limit=0.97:level=0";
+            string Gain(AudioInput a) => a.Gain.ToString("0.###", CultureInfo.InvariantCulture);
+
             if (audio.Count == 1)
             {
-                parts.Add("-map 0:v:0 -map 1:a:0");
+                if (audio[0].Gain == 1.0)
+                    parts.Add("-map 0:v:0 -map 1:a:0");
+                else
+                    parts.Add($"-filter_complex \"[1:a]volume={Gain(audio[0])},{Limiter}[aout]\" -map 0:v:0 -map \"[aout]\"");
             }
             else if (audio.Count > 1)
             {
-                string inputs = string.Concat(audio.Select((_, i) => $"[{i + 1}:a]"));
-                parts.Add($"-filter_complex \"{inputs}amix=inputs={audio.Count}:duration=longest:normalize=0[aout]\" -map 0:v:0 -map \"[aout]\"");
+                var chains = audio.Select((a, i) => a.Gain == 1.0 ? "" : $"[{i + 1}:a]volume={Gain(a)}[g{i + 1}];").ToList();
+                string inputs = string.Concat(audio.Select((a, i) => a.Gain == 1.0 ? $"[{i + 1}:a]" : $"[g{i + 1}]"));
+                parts.Add($"-filter_complex \"{string.Concat(chains)}{inputs}amix=inputs={audio.Count}:duration=longest:normalize=0,{Limiter}[aout]\" -map 0:v:0 -map \"[aout]\"");
             }
 
             // ---- video filters
