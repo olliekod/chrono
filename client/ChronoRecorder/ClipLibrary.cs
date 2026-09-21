@@ -131,9 +131,15 @@ namespace ChronoRecorder
             return Edit(id, c => c.Title = LibraryIndex.CleanTitle(title, LibraryIndex.TitleFromFileName(c.FileName)));
         }
 
-        public bool MarkUploaded(string id, string link, string remoteId)
+        public bool MarkUploaded(string id, string link, string remoteId, string? ownerToken = null)
         {
-            return Edit(id, c => { c.Link = link; c.RemoteId = remoteId; c.UploadedUtc = DateTime.UtcNow; });
+            return Edit(id, c => { c.Link = link; c.RemoteId = remoteId; c.UploadedUtc = DateTime.UtcNow; c.OwnerToken = ownerToken; });
+        }
+
+        /// <summary>The uploaded copy is gone from the server: the clip is just a file on this PC again.</summary>
+        public bool ClearUpload(string id)
+        {
+            return Edit(id, c => { c.Link = null; c.RemoteId = null; c.UploadedUtc = null; c.OwnerToken = null; });
         }
 
         /// <summary>Record what is now true of the file after it was changed (a trim).</summary>
@@ -281,7 +287,7 @@ namespace ChronoRecorder
         {
             Id = c.Id, FileName = c.FileName, Title = c.Title, Game = c.Game, CreatedUtc = c.CreatedUtc,
             DurationSeconds = c.DurationSeconds, SizeBytes = c.SizeBytes, Resolution = c.Resolution,
-            Link = c.Link, RemoteId = c.RemoteId, UploadedUtc = c.UploadedUtc
+            Link = c.Link, RemoteId = c.RemoteId, UploadedUtc = c.UploadedUtc, OwnerToken = c.OwnerToken
         };
 
         private static string Signature(IEnumerable<ClipRecord> list)

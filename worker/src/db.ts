@@ -15,6 +15,8 @@ export interface ClipRow {
   bitrate_kbps: number | null;
   views: number;
   created_at: string;
+  /** SHA-256 of the owner token. Null for clips uploaded before owner tokens existed. */
+  owner_token_hash: string | null;
 }
 
 export function findClip(db: D1Database, id: string): Promise<ClipRow | null> {
@@ -31,13 +33,14 @@ export async function insertClip(
   objectKey: string,
   uploadId: string,
   clip: NewClip,
+  ownerTokenHash: string,
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO clips (id, owner, filename, title, object_key, upload_id, size_bytes, duration_seconds, resolution, fps, bitrate_kbps)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO clips (id, owner, filename, title, object_key, upload_id, size_bytes, duration_seconds, resolution, fps, bitrate_kbps, owner_token_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(id, clip.owner, clip.filename, clip.title, objectKey, uploadId, clip.size, clip.duration, clip.resolution, clip.fps, clip.bitrate)
+    .bind(id, clip.owner, clip.filename, clip.title, objectKey, uploadId, clip.size, clip.duration, clip.resolution, clip.fps, clip.bitrate, ownerTokenHash)
     .run();
 }
 

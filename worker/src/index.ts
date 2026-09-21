@@ -5,6 +5,7 @@ import {
   createClip,
   errorResponse,
   json,
+  removeClip,
   renameClip,
   serveVideo,
   uploadPart,
@@ -27,6 +28,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         complete: "POST /api/clips/:id/complete",
         metadata: "GET /api/clips/:id",
         rename: "PATCH /api/clips/:id",
+        remove: "DELETE /api/clips/:id",
         watch: "GET /watch/:id",
         video: "GET /v/:id.mp4",
       },
@@ -48,7 +50,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if ((m = /^\/api\/clips\/([^/]+)$/.exec(pathname))) {
     if (method === "GET") return clipMetadata(request, env, m[1]);
     if (method === "PATCH") return renameClip(request, env, m[1]);
-    return methodNotAllowed("GET, PATCH");
+    if (method === "DELETE") return removeClip(request, env, m[1]);
+    return methodNotAllowed("GET, PATCH, DELETE");
   }
 
   if ((m = /^\/watch\/([^/]+)$/.exec(pathname))) {

@@ -8,13 +8,15 @@ namespace ChronoRecorder
     /// <summary>A clip as the window sees it (JSON, camelCase).</summary>
     public sealed record ClipDto(
         string Id, string Title, string? Game, DateTime CreatedUtc, double? Duration, long SizeBytes, string? Resolution,
-        string? Link, DateTime? UploadedUtc, string VideoUrl, string FileName)
+        string? Link, DateTime? UploadedUtc, string VideoUrl, string FileName, bool CanRemoveUpload)
     {
         public static ClipDto From(ClipRecord clip, string clipsBaseUrl) => new(
             clip.Id, clip.Title, clip.Game, DateTime.SpecifyKind(clip.CreatedUtc, DateTimeKind.Utc), clip.DurationSeconds, clip.SizeBytes, clip.Resolution,
             string.IsNullOrEmpty(clip.Link) ? null : clip.Link,
             clip.UploadedUtc == null ? null : DateTime.SpecifyKind(clip.UploadedUtc.Value, DateTimeKind.Utc),
-            clipsBaseUrl + Uri.EscapeDataString(clip.FileName), clip.FileName);
+            clipsBaseUrl + Uri.EscapeDataString(clip.FileName), clip.FileName,
+            // The token itself never leaves the app; the page only learns whether removing is possible.
+            clip.IsUploaded && !string.IsNullOrEmpty(clip.OwnerToken));
     }
 
     public sealed record HotkeyDto(string Name, IReadOnlyList<string> Keys, int Seconds);

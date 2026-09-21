@@ -11,12 +11,16 @@ using Newtonsoft.Json.Linq;
 
 namespace ChronoRecorder
 {
-    public sealed record UploadResult(string ClipId, string Link);
+    /// <param name="OwnerToken">The server's proof that this app owns the clip (null from a server that predates it). Keep it: renaming or removing needs it.</param>
+    public sealed record UploadResult(string ClipId, string Link, string? OwnerToken = null);
 
     /// <summary>An upload failure with a message that is fit to show the user.</summary>
     public class UploadException : Exception
     {
-        public UploadException(string message, Exception? inner = null) : base(message, inner) { }
+        /// <summary>The server's status code, when it answered at all.</summary>
+        public HttpStatusCode? Status { get; }
+
+        public UploadException(string message, Exception? inner = null, HttpStatusCode? status = null) : base(message, inner) { Status = status; }
     }
 
     /// <summary>
@@ -76,6 +80,8 @@ namespace ChronoRecorder
             string clipId = (string?)created["id"] ?? "";
             long partSize = (long?)created["partSize"] ?? 0;
             string link = (string?)created["link"] ?? "";
+            string? ownerToken = (string?)created["ownerToken"];
+            if (string.IsNullOrEmpty(ownerToken)) ownerToken = null;
 
             // The part size decides the size of the buffer held in memory, so take it from the server only within
             // reason: a wrong number there should fail the upload, not ask Windows for gigabytes.
@@ -112,15 +118,33 @@ namespace ChronoRecorder
             var done = await SendAsync(HttpMethod.Post, $"{baseUrl}/api/clips/{clipId}/complete", settings.UploadKey,
                 "finish the upload", () => JsonBody(new { parts = uploaded }), ct);
 
-            return new UploadResult(clipId, (string?)done["link"] ?? link);
+            return new UploadResult(clipId, (string?)done["link"] ?? link, ownerToken);
         }
 
         /// <summary>Rename an uploaded clip on the server, so its page and Discord embed show the new title.</summary>
-        public async Task RenameAsync(UploadSettings settings, string clipId, string title, CancellationToken ct = default)
+        public async Task RenameAsync(UploadSettings settings, string clipId, string title, string? ownerToken = null, CancellationToken ct = default)
         {
             string baseUrl = settings.ServerUrl.TrimEnd('/');
             await SendAsync(new HttpMethod("PATCH"), $"{baseUrl}/api/clips/{Uri.EscapeDataString(clipId)}", settings.UploadKey, "rename the clip",
-                () => JsonBody(new { title }), ct);
+                () => JsonBody(new { title }), ct, ownerToken);
+        }
+
+        /// <summary>
+        /// Take an uploaded clip off the server: its page, its video and its link. Needs the clip's owner token, so only the
+        /// app that uploaded it can. A clip the server no longer has counts as removed.
+        /// </summary>
+        public async Task RemoveAsync(UploadSettings settings, string clipId, string ownerToken, CancellationToken ct = default)
+        {
+            string baseUrl = settings.ServerUrl.TrimEnd('/');
+            try
+            {
+                await SendAsync(HttpMethod.Delete, $"{baseUrl}/api/clips/{Uri.EscapeDataString(clipId)}", settings.UploadKey, "remove the upload",
+                    () => null, ct, ownerToken);
+            }
+            catch (UploadException ex) when (ex.Status == HttpStatusCode.NotFound)
+            {
+                // Already gone (removed from another PC, or by whoever runs the server): that is what was asked for.
+            }
         }
 
         private static StringContent JsonBody(object body)
@@ -131,7 +155,7 @@ namespace ChronoRecorder
         /// Anything else (a rejected key, an invalid clip) fails at once with the server's own message.
         /// </summary>
         private async Task<JObject> SendAsync(
-            HttpMethod method, string url, string key, string what, Func<HttpContent> makeContent, CancellationToken ct)
+            HttpMethod method, string url, string key, string what, Func<HttpContent?> makeContent, CancellationToken ct, string? ownerToken = null)
         {
             for (int attempt = 1; ; attempt++)
             {
@@ -142,6 +166,7 @@ namespace ChronoRecorder
                 {
                     using var request = new HttpRequestMessage(method, url) { Content = makeContent() };
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+                    if (!string.IsNullOrEmpty(ownerToken)) request.Headers.Add("X-Owner-Token", ownerToken);
 
                     using var response = await http.SendAsync(request, ct);
                     string text = await response.Content.ReadAsStringAsync(ct);
@@ -152,7 +177,7 @@ namespace ChronoRecorder
                         catch (JsonException) { throw new UploadException("The server sent an unexpected reply. Check the server address in Settings."); }
                     }
 
-                    if (!IsTemporary(response.StatusCode)) throw new UploadException(Describe(response.StatusCode, text, what));
+                    if (!IsTemporary(response.StatusCode)) throw new UploadException(Describe(response.StatusCode, text, what), status: response.StatusCode);
                     problem = $"the server answered {(int)response.StatusCode}";
                 }
                 catch (HttpRequestException ex)

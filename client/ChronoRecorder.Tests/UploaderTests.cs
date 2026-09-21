@@ -30,6 +30,8 @@ namespace ChronoRecorder.Tests
 
         private Uploader MakeUploader() => new Uploader(new HttpClient(server)) { RetryDelay = _ => TimeSpan.Zero };
 
+        private const string OwnerToken = "tok_0123456789abcdefghijklmnopqrstuvwxyzABCDE";
+
         private static UploadSettings Settings => new(Server, "secret-key", "olly");
         private static ClipInfo Info => new(12.5, "1920x1080", 60, 8000);
 
@@ -180,11 +182,99 @@ namespace ChronoRecorder.Tests
             public void Report(double value) => Values.Add(value);
         }
 
+        // ------------------------------------------------------------- owner tokens and removing
+
+        [Fact]
+        public async Task TheOwnerTokenTheServerGives_IsReturnedSoTheAppCanKeepIt()
+        {
+            var result = await MakeUploader().UploadAsync(MakeFile(500), Settings, Info);
+
+            Assert.Equal(OwnerToken, result.OwnerToken);
+        }
+
+        [Fact]
+        public async Task AServerThatPredatesOwnerTokens_GivesNone_AndUploadingStillWorks()
+        {
+            server.WithoutOwnerToken = true;
+
+            var result = await MakeUploader().UploadAsync(MakeFile(500), Settings, Info);
+
+            Assert.Null(result.OwnerToken);
+            Assert.Equal("abc123def456", result.ClipId);
+        }
+
+        [Fact]
+        public async Task Removing_SendsDelete_WithTheKeyAndTheClipsOwnToken()
+        {
+            await MakeUploader().RemoveAsync(Settings, "abc123def456", OwnerToken);
+
+            var request = Assert.Single(server.Requests);
+            Assert.Equal("DELETE", request.Method);
+            Assert.Equal($"{Server}/api/clips/abc123def456", request.Url);
+            Assert.Equal("Bearer secret-key", request.Authorization);
+            Assert.Equal(OwnerToken, request.OwnerToken);
+            Assert.Empty(request.BodyBytes);
+        }
+
+        [Fact]
+        public async Task AClipTheServerNoLongerHas_CountsAsRemoved()
+        {
+            server.ClipStatus = HttpStatusCode.NotFound;
+            server.ClipError = "Clip not found";
+
+            await MakeUploader().RemoveAsync(Settings, "abc123def456", OwnerToken);   // does not throw
+        }
+
+        [Fact]
+        public async Task RemovingSomeoneElsesClip_ShowsTheServersReason()
+        {
+            server.ClipStatus = HttpStatusCode.Forbidden;
+            server.ClipError = "This clip belongs to someone else.";
+
+            var ex = await Assert.ThrowsAsync<UploadException>(() => MakeUploader().RemoveAsync(Settings, "abc123def456", OwnerToken));
+
+            Assert.Contains("belongs to someone else", ex.Message);
+            Assert.Equal(HttpStatusCode.Forbidden, ex.Status);
+            Assert.Single(server.Requests);   // a refusal is final, not retried
+        }
+
+        [Fact]
+        public async Task RemovingWithAWrongKey_SaysToCheckIt()
+        {
+            server.RejectKey = true;
+
+            var ex = await Assert.ThrowsAsync<UploadException>(() => MakeUploader().RemoveAsync(Settings, "abc123def456", OwnerToken));
+
+            Assert.Contains("upload key", ex.Message);
+        }
+
+        [Fact]
+        public async Task ATemporaryServerError_WhileRemoving_IsRetried()
+        {
+            server.ClipStatus = HttpStatusCode.ServiceUnavailable;
+            server.ClipError = "busy";
+
+            await Assert.ThrowsAsync<UploadException>(() => MakeUploader().RemoveAsync(Settings, "abc123def456", OwnerToken));
+
+            Assert.Equal(3, server.Requests.Count);   // three tries, then it gives up and says so
+        }
+
+        [Fact]
+        public async Task Renaming_SendsTheOwnerToken_WhenThereIsOne_AndNothingWhenThereIsNot()
+        {
+            await MakeUploader().RenameAsync(Settings, "abc123def456", "Nice one", OwnerToken);
+            await MakeUploader().RenameAsync(Settings, "abc123def456", "Old clip");
+
+            Assert.Equal(OwnerToken, server.Requests[0].OwnerToken);
+            Assert.Null(server.Requests[1].OwnerToken);
+        }
+
         private sealed class RecordedRequest
         {
             public string Method = "";
             public string Url = "";
             public string? Authorization;
+            public string? OwnerToken;
             public byte[] BodyBytes = Array.Empty<byte>();
             public string Body => Encoding.UTF8.GetString(BodyBytes);
         }
@@ -195,6 +285,9 @@ namespace ChronoRecorder.Tests
             public readonly List<RecordedRequest> Requests = new();
             public bool RejectKey;
             public bool MalformedCreate;
+            public bool WithoutOwnerToken;   // a server from before owner tokens existed
+            public HttpStatusCode ClipStatus = HttpStatusCode.OK;   // what PATCH and DELETE on a clip answer
+            public string ClipError = "";
             public (HttpStatusCode Status, string Message)? CreateError;
             private readonly Dictionary<int, (HttpStatusCode Status, int Remaining)> failures = new();
             private readonly Dictionary<int, int> drops = new();
@@ -209,6 +302,7 @@ namespace ChronoRecorder.Tests
                     Method = request.Method.Method,
                     Url = request.RequestUri!.ToString(),
                     Authorization = request.Headers.Authorization?.ToString(),
+                    OwnerToken = request.Headers.TryGetValues("X-Owner-Token", out var tokens) ? tokens.Single() : null,
                     BodyBytes = request.Content == null ? Array.Empty<byte>() : await request.Content.ReadAsByteArrayAsync(ct),
                 };
                 Requests.Add(recorded);
@@ -217,11 +311,15 @@ namespace ChronoRecorder.Tests
 
                 string path = request.RequestUri.AbsolutePath;
 
+                if (request.Method.Method is "DELETE" or "PATCH")
+                    return ClipStatus == HttpStatusCode.OK ? Json(HttpStatusCode.OK, new { id = "abc123def456", removed = true }) : Json(ClipStatus, new { error = ClipError });
+
                 if (path == "/api/clips")
                 {
                     if (CreateError is { } err) return Json(err.Status, new { error = err.Message });
                     if (MalformedCreate) return Json(HttpStatusCode.Created, new { unexpected = true });
-                    return Json(HttpStatusCode.Created, new { id = "abc123def456", partSize = PartSize, link = $"{Server}/watch/abc123def456" });
+                    if (WithoutOwnerToken) return Json(HttpStatusCode.Created, new { id = "abc123def456", partSize = PartSize, link = $"{Server}/watch/abc123def456" });
+                    return Json(HttpStatusCode.Created, new { id = "abc123def456", partSize = PartSize, link = $"{Server}/watch/abc123def456", ownerToken = OwnerToken });
                 }
 
                 var part = System.Text.RegularExpressions.Regex.Match(path, @"/parts/(\d+)$");

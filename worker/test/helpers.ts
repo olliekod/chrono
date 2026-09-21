@@ -37,7 +37,12 @@ export interface UploadedClip {
   id: string;
   link: string;
   data: Uint8Array;
+  /** The secret the server hands the uploader once; needed to rename or remove the clip. */
+  ownerToken: string;
 }
+
+/** The headers the app sends to act on its own clip: the shared key, and this clip's token. */
+export const asOwner = (clip: { ownerToken: string }): Record<string, string> => ({ ...AUTH, "X-Owner-Token": clip.ownerToken });
 
 /** Runs the whole create -> parts -> complete flow. */
 export async function uploadClip(
@@ -53,7 +58,7 @@ export async function uploadClip(
     ...meta,
   });
   if (created.status !== 201) throw new Error(`create failed: ${created.status} ${await created.text()}`);
-  const { id, partSize, link } = await created.json<{ id: string; partSize: number; link: string }>();
+  const { id, partSize, link, ownerToken } = await created.json<{ id: string; partSize: number; link: string; ownerToken: string }>();
 
   const parts: { partNumber: number; etag: string }[] = [];
   for (let offset = 0, n = 1; offset < size; offset += partSize, n++) {
@@ -69,5 +74,5 @@ export async function uploadClip(
   const done = await jsonPost(`/api/clips/${id}/complete`, { parts });
   if (done.status !== 200) throw new Error(`complete failed: ${done.status} ${await done.text()}`);
 
-  return { id, link, data };
+  return { id, link, data, ownerToken };
 }

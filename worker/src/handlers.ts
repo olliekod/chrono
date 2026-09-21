@@ -2,6 +2,7 @@ import { isAuthorized } from "./auth";
 import { countView, deleteClip, findClip, findReadyClip, insertClip, markReady, setTitle } from "./db";
 import { renderWatchPage, watchPageCsp } from "./html";
 import { isClipId, newClipId } from "./ids";
+import { carriesOwnerToken, hashOwnerToken, newOwnerToken } from "./owner";
 import { parseRange } from "./range";
 import { MAX_PARTS, parseCompletion, parseNewClip, parseTitle } from "./validate";
 
@@ -59,7 +60,10 @@ const notFound = () => errorResponse(404, "Clip not found");
 
 // ---------------------------------------------------------------- uploading
 
-/** POST /api/clips: start an upload and get the id, part size and share link. */
+/**
+ * POST /api/clips: start an upload and get the id, part size and share link, plus the owner token. The token is shown
+ * once, here: only its hash is kept, so it is the uploading app's proof that this clip is its own.
+ */
 export async function createClip(request: Request, env: Env): Promise<Response> {
   const denied = await requireAuth(request, env);
   if (denied) return denied;
@@ -70,10 +74,11 @@ export async function createClip(request: Request, env: Env): Promise<Response> 
 
   const id = newClipId();
   const objectKey = `clips/${clip.owner}/${id}.mp4`;
+  const ownerToken = newOwnerToken();
 
   const upload = await env.CLIPS.createMultipartUpload(objectKey, { httpMetadata: { contentType: "video/mp4" } });
   try {
-    await insertClip(env.DB, id, objectKey, upload.uploadId, clip);
+    await insertClip(env.DB, id, objectKey, upload.uploadId, clip, await hashOwnerToken(ownerToken));
   } catch (err) {
     // Don't leave an orphaned multipart upload behind.
     await upload.abort().catch(() => undefined);
@@ -81,7 +86,7 @@ export async function createClip(request: Request, env: Env): Promise<Response> 
   }
 
   const origin = new URL(request.url).origin;
-  return json({ id, partSize: Number(env.PART_SIZE_BYTES), link: `${origin}/watch/${id}` }, 201);
+  return json({ id, partSize: Number(env.PART_SIZE_BYTES), link: `${origin}/watch/${id}`, ownerToken }, 201);
 }
 
 /** PUT /api/clips/:id/parts/:n: upload one part. Every part must be exactly partSize bytes except the last. */
@@ -187,13 +192,20 @@ export async function clipMetadata(request: Request, env: Env, id: string): Prom
   });
 }
 
-/** PATCH /api/clips/:id {title}: rename an uploaded clip. An empty title goes back to "<owner>'s clip". */
+const NOT_YOURS = "This clip belongs to someone else.";
+
+/**
+ * PATCH /api/clips/:id {title}: rename an uploaded clip. An empty title goes back to "<owner>'s clip".
+ * Needs the upload key and, for any clip that has one, that clip's owner token. Clips from before owner tokens
+ * existed have none and can still be renamed with the key alone.
+ */
 export async function renameClip(request: Request, env: Env, id: string): Promise<Response> {
   const denied = await requireAuth(request, env);
   if (denied) return denied;
 
   const clip = isClipId(id) ? await findReadyClip(env.DB, id) : null;
   if (!clip) return notFound();
+  if (clip.owner_token_hash && !(await carriesOwnerToken(request, clip.owner_token_hash))) return errorResponse(403, NOT_YOURS);
 
   const body = await readJson(request);
   if (typeof body !== "object" || body === null || Array.isArray(body) || !("title" in body)) {
@@ -204,6 +216,34 @@ export async function renameClip(request: Request, env: Env, id: string): Promis
 
   await setTitle(env.DB, id, title.value);
   return json({ id, title: title.value });
+}
+
+/**
+ * DELETE /api/clips/:id: take a clip off the server, both its video and its page, so its link stops working.
+ * Needs the upload key and this clip's owner token, which only the app that uploaded it has. That is what makes it
+ * safe to share one key among friends: knowing the key and even a clip's id is not enough to remove someone else's.
+ */
+export async function removeClip(request: Request, env: Env, id: string): Promise<Response> {
+  const denied = await requireAuth(request, env);
+  if (denied) return denied;
+
+  const clip = isClipId(id) ? await findClip(env.DB, id) : null;
+  if (!clip) return notFound();
+
+  if (!clip.owner_token_hash) {
+    return errorResponse(403, "This clip was uploaded before removing uploads was supported, so it can't be removed from Chrono.");
+  }
+  if (!(await carriesOwnerToken(request, clip.owner_token_hash))) return errorResponse(403, NOT_YOURS);
+
+  // The video first, then the row: if the first step fails the clip is still listed and the request can simply be
+  // repeated (deleting an object that is already gone is not an error).
+  if (clip.status === "uploading") {
+    await env.CLIPS.resumeMultipartUpload(clip.object_key, clip.upload_id).abort().catch(() => undefined);
+  }
+  await env.CLIPS.delete(clip.object_key);
+  await deleteClip(env.DB, id);
+
+  return json({ id, removed: true });
 }
 
 /** GET /watch/:id: the shareable page, with the tags Discord reads to embed the video. */

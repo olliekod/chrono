@@ -73,6 +73,18 @@ namespace ChronoRecorder.Tests
             return (string)reply["error"]!;
         }
 
+        private const string OwnerToken = "tok_0123456789abcdefghijklmnopqrstuvwxyzABCDE";
+
+        /// <summary>An uploaded clip whose token the app holds, like one uploaded by this version of Chrono.</summary>
+        private async Task<string> UploadedClip(string name = "a.mp4", string? token = OwnerToken)
+        {
+            ConfigureUploads();
+            AddClip(name);
+            string id = await IdOfOnlyClip();
+            library.MarkUploaded(id, $"{Server}/watch/abc123def456", "abc123def456", token);
+            return id;
+        }
+
         private async Task<string> IdOfOnlyClip()
         {
             var data = await Ok("getLibrary");
@@ -244,7 +256,168 @@ namespace ChronoRecorder.Tests
             Assert.Contains("upload key", (string?)data["remoteError"]);
         }
 
+        [Fact]
+        public async Task RenamingAnUploadedClip_SendsItsOwnerToken()
+        {
+            string id = await UploadedClip();
+
+            await Ok("renameClip", new { id, title = "Nice one" });
+
+            Assert.Equal(OwnerToken, Assert.Single(http.Requests).OwnerToken);
+        }
+
+        // ------------------------------------------------------------ removing an upload
+
+        [Fact]
+        public async Task TheUploadedCopyCanBeRemoved_AndTheClipStaysOnThisPc()
+        {
+            string id = await UploadedClip();
+            string file = Path.Combine(config.OutputFolder, "a.mp4");
+
+            var data = await Ok("removeUpload", new { id });
+
+            var delete = Assert.Single(http.Requests);
+            Assert.Equal("DELETE", delete.Method);
+            Assert.Equal($"{Server}/api/clips/abc123def456", delete.Url);
+            Assert.Equal("Bearer key", delete.Authorization);
+            Assert.Equal(OwnerToken, delete.OwnerToken);
+
+            Assert.Null((string?)data["clip"]!["link"]);
+            Assert.False((bool)data["clip"]!["canRemoveUpload"]!);
+            Assert.True(File.Exists(file));
+            Assert.False(library.Find(id)!.IsUploaded);
+            Assert.Null(library.Find(id)!.OwnerToken);
+        }
+
+        [Fact]
+        public async Task OnlyAClipYouUploaded_OffersRemoval()
+        {
+            string id = await UploadedClip();
+
+            var data = await Ok("getClip", new { id });
+
+            Assert.True((bool)data["clip"]!["canRemoveUpload"]!);
+            Assert.DoesNotContain(OwnerToken, LastRaw);   // the page is told whether it can, never given the secret
+        }
+
+        [Fact]
+        public async Task AClipThatIsntUploaded_HasNothingToRemove()
+        {
+            ConfigureUploads();
+            AddClip("a.mp4");
+            string id = await IdOfOnlyClip();
+
+            Assert.False((bool)(await Ok("getClip", new { id }))["clip"]!["canRemoveUpload"]!);
+            Assert.Contains("isn't uploaded", await Fails("removeUpload", new { id }));
+            Assert.Empty(http.Requests);
+        }
+
+        [Fact]
+        public async Task AClipFromAnOlderChrono_CantBeRemoved_AndNothingIsSent()
+        {
+            string id = await UploadedClip(token: null);
+
+            Assert.False((bool)(await Ok("getClip", new { id }))["clip"]!["canRemoveUpload"]!);
+            Assert.Contains("older version of Chrono", await Fails("removeUpload", new { id }));
+            Assert.Empty(http.Requests);
+            Assert.True(library.Find(id)!.IsUploaded);
+        }
+
+        [Fact]
+        public async Task IfTheServerRefuses_TheClipStaysUploaded_AndTheReasonIsShown()
+        {
+            string id = await UploadedClip();
+            http.DeleteStatus = HttpStatusCode.Forbidden;
+            http.DeleteError = "This clip belongs to someone else.";
+
+            Assert.Contains("belongs to someone else", await Fails("removeUpload", new { id }));
+
+            Assert.True(library.Find(id)!.IsUploaded);
+            Assert.Equal(OwnerToken, library.Find(id)!.OwnerToken);
+        }
+
+        [Fact]
+        public async Task WithoutServerDetails_RemovingSaysToSetThemUp()
+        {
+            string id = await UploadedClip();
+            config.ApiUrl = "";
+            config.UploadKey = "";
+
+            Assert.Contains("Settings", await Fails("removeUpload", new { id }));
+            Assert.Empty(http.Requests);
+        }
+
+        // ---------------------------------------------------- deleting and the cloud copy
+
+        [Fact]
+        public async Task DeletingAnUploadedClip_CanAlsoRemoveTheCloudCopy_Removing_First()
+        {
+            string id = await UploadedClip();
+            string file = Path.Combine(config.OutputFolder, "a.mp4");
+
+            await Ok("deleteClip", new { id, removeUpload = true });
+
+            var delete = Assert.Single(http.Requests);
+            Assert.Equal("DELETE", delete.Method);
+            Assert.Equal(OwnerToken, delete.OwnerToken);
+            Assert.False(File.Exists(file));
+            Assert.Null(library.Find(id));
+        }
+
+        [Fact]
+        public async Task DeletingWithoutTheCloudOption_LeavesTheUploadOnline()
+        {
+            string id = await UploadedClip();
+            string file = Path.Combine(config.OutputFolder, "a.mp4");
+
+            await Ok("deleteClip", new { id });
+
+            Assert.Empty(http.Requests);   // the link keeps working
+            Assert.False(File.Exists(file));
+        }
+
+        [Fact]
+        public async Task IfTheCloudCopyCantBeRemoved_NothingIsDeleted_SoTheSameClipCanBeTriedAgain()
+        {
+            string id = await UploadedClip();
+            string file = Path.Combine(config.OutputFolder, "a.mp4");
+            http.DeleteStatus = HttpStatusCode.ServiceUnavailable;
+            http.DeleteError = "busy";
+
+            await Fails("deleteClip", new { id, removeUpload = true });
+
+            Assert.True(File.Exists(file));
+            Assert.NotNull(library.Find(id));
+            Assert.True(library.Find(id)!.IsUploaded);
+        }
+
+        [Fact]
+        public async Task AskingToRemoveTheCloudCopy_OfAClipThatIsntUploaded_IsRefused_AndDeletesNothing()
+        {
+            ConfigureUploads();
+            string file = AddClip("a.mp4");
+            string id = await IdOfOnlyClip();
+
+            Assert.Contains("isn't uploaded", await Fails("deleteClip", new { id, removeUpload = true }));
+
+            Assert.True(File.Exists(file));
+        }
+
         // --------------------------------------------------------------------- upload
+
+        [Fact]
+        public async Task UploadingKeepsTheOwnerToken_ButNeverSendsItToThePage()
+        {
+            ConfigureUploads();
+            AddClip("a.mp4");
+            string id = await IdOfOnlyClip();
+
+            await Ok("uploadClip", new { id });
+
+            Assert.Equal(OwnerToken, library.Find(id)!.OwnerToken);
+            Assert.DoesNotContain(OwnerToken, LastRaw);
+            Assert.True((bool)(await Ok("getClip", new { id }))["clip"]!["canRemoveUpload"]!);
+        }
 
         [Fact]
         public async Task UploadingWithoutSetUp_SaysWhatToDo()
@@ -571,7 +744,7 @@ namespace ChronoRecorder.Tests
                 ScreenAdapterName: "NVIDIA GeForce RTX 4080", ScreenAdapterVendorId: 0x10DE);
         }
 
-        private sealed record Recorded(string Method, string Url, string Body, string? Authorization);
+        private sealed record Recorded(string Method, string Url, string Body, string? Authorization, string? OwnerToken = null);
 
         /// <summary>A stand-in for the clip server: accepts creates, parts, completes and renames.</summary>
         private sealed class StubServer : HttpMessageHandler
@@ -579,18 +752,23 @@ namespace ChronoRecorder.Tests
             public readonly List<Recorded> Requests = new();
             public bool RejectKey;
             public HttpStatusCode PatchStatus = HttpStatusCode.OK;
+            public HttpStatusCode DeleteStatus = HttpStatusCode.OK;
+            public string DeleteError = "";
 
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
             {
                 string body = request.Content == null ? "" : Encoding.UTF8.GetString(await request.Content.ReadAsByteArrayAsync(ct));
-                Requests.Add(new Recorded(request.Method.Method, request.RequestUri!.ToString(), request.Content?.Headers.ContentType?.MediaType == "application/json" ? body : "", request.Headers.Authorization?.ToString()));
+                Requests.Add(new Recorded(request.Method.Method, request.RequestUri!.ToString(), request.Content?.Headers.ContentType?.MediaType == "application/json" ? body : "", request.Headers.Authorization?.ToString(),
+                    request.Headers.TryGetValues("X-Owner-Token", out var tokens) ? tokens.Single() : null));
 
                 if (RejectKey) return Json(HttpStatusCode.Unauthorized, new { error = "Missing or invalid upload key" });
 
                 string path = request.RequestUri.AbsolutePath;
+                if (request.Method.Method == "DELETE")
+                    return DeleteStatus == HttpStatusCode.OK ? Json(HttpStatusCode.OK, new { id = "abc123def456", removed = true }) : Json(DeleteStatus, new { error = DeleteError });
                 if (request.Method.Method == "PATCH")
                     return PatchStatus == HttpStatusCode.OK ? Json(HttpStatusCode.OK, new { id = "abc123def456" }) : Json(PatchStatus, new { error = "Missing or invalid upload key" });
-                if (path == "/api/clips") return Json(HttpStatusCode.Created, new { id = "abc123def456", partSize = 1000, link = $"{Server}/watch/abc123def456" });
+                if (path == "/api/clips") return Json(HttpStatusCode.Created, new { id = "abc123def456", partSize = 1000, link = $"{Server}/watch/abc123def456", ownerToken = OwnerToken });
                 if (path.Contains("/parts/")) return Json(HttpStatusCode.OK, new { partNumber = int.Parse(path[(path.LastIndexOf('/') + 1)..]), etag = "e" });
                 return Json(HttpStatusCode.OK, new { link = $"{Server}/watch/abc123def456" });
             }

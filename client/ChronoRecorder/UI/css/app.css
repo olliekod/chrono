@@ -339,6 +339,12 @@ select.filter option { background: #2b2d31; }
   display: flex; align-items: center; gap: 10px; padding: 14px 20px 18px; border-top: 1px solid #26272b; background: #2b2d31; flex-wrap: wrap;
 }
 .modal-foot .spacer { flex: 1; }
+.confirm-bar {
+  display: flex; align-items: center; gap: 14px 20px; flex-wrap: wrap; padding: 12px 20px;
+  background: rgba(218, 55, 60, 0.14); border-top: 1px solid rgba(218, 55, 60, 0.45);
+}
+.confirm-bar p { flex: 1 1 340px; font-size: 13.5px; }
+.confirm-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .progress {
   position: relative; overflow: hidden;
 }

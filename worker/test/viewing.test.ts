@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { AUTH, BASE, PART, api, jsonPost, sameBytes, uploadClip } from "./helpers";
+import { AUTH, BASE, PART, api, asOwner, jsonPost, sameBytes, uploadClip } from "./helpers";
 
 const SIZE = PART + 20_000;
 
@@ -212,9 +212,10 @@ describe("PATCH /api/clips/:id (rename)", () => {
     api(`/api/clips/${id}`, { method: "PATCH", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
   it("changes the title shown on the page", async () => {
-    const { id } = await uploadClip(SIZE, { title: "Before" });
+    const clip = await uploadClip(SIZE, { title: "Before" });
+    const { id } = clip;
 
-    const res = await patch(id, { title: "After" });
+    const res = await patch(id, { title: "After" }, asOwner(clip));
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id, title: "After" });
@@ -222,9 +223,10 @@ describe("PATCH /api/clips/:id (rename)", () => {
   });
 
   it("an empty title goes back to the default wording", async () => {
-    const { id } = await uploadClip(SIZE, { title: "Before" });
+    const clip = await uploadClip(SIZE, { title: "Before" });
+    const { id } = clip;
 
-    await patch(id, { title: "" });
+    await patch(id, { title: "" }, asOwner(clip));
 
     expect(await (await api(`/watch/${id}`)).text()).toContain("<title>olly&#39;s clip</title>");
   });
@@ -237,10 +239,11 @@ describe("PATCH /api/clips/:id (rename)", () => {
   });
 
   it("rejects a bad body and an unknown clip", async () => {
-    const { id } = await uploadClip(SIZE);
+    const clip = await uploadClip(SIZE);
+    const { id } = clip;
 
-    expect((await patch(id, { nope: 1 })).status).toBe(400);
-    expect((await patch(id, { title: "x".repeat(101) })).status).toBe(400);
-    expect((await patch("abcdefghijkl", { title: "x" })).status).toBe(404);
+    expect((await patch(id, { nope: 1 }, asOwner(clip))).status).toBe(400);
+    expect((await patch(id, { title: "x".repeat(101) }, asOwner(clip))).status).toBe(400);
+    expect((await patch("abcdefghijkl", { title: "x" }, asOwner(clip))).status).toBe(404);
   });
 });

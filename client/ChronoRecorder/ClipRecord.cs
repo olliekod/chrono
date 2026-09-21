@@ -32,6 +32,13 @@ namespace ChronoRecorder
 
         public DateTime? UploadedUtc { get; set; }
 
+        /// <summary>
+        /// The secret the server gave this app when the clip was uploaded. Renaming or removing the uploaded copy needs it,
+        /// which is what keeps a friend who shares the upload key from touching your clips. Null for clips uploaded before the
+        /// server issued them: those can't be removed from Chrono. Never sent to the page.
+        /// </summary>
+        public string? OwnerToken { get; set; }
+
         public bool IsUploaded => !string.IsNullOrEmpty(Link);
     }
 }

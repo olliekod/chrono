@@ -17,10 +17,10 @@
     { id: 'c2', title: 'Risk of rain 2 - Sep 20, 8:41 PM', game: GAMES[0], createdUtc: minutes(50), duration: 62, sizeBytes: 71200000, resolution: '2560x1440' },
     { id: 'c3', title: 'Did that just happen', game: GAMES[1], createdUtc: minutes(60 * 20), duration: 31.7, sizeBytes: 21000000, resolution: '1920x1080' },
     { id: 'c4', title: 'Quick Clip', game: null, createdUtc: minutes(60 * 26), duration: 28.9, sizeBytes: 18100000, resolution: '2560x1440' },
-    { id: 'c5', title: 'Ace with the sheriff, no scope', game: GAMES[3], createdUtc: minutes(60 * 30), duration: 44, sizeBytes: 52000000, resolution: '1920x1080', link: 'https://chrono-clips.example.workers.dev/watch/k3p9Zt2mQxa1', uploadedUtc: minutes(60 * 29) },
-    { id: 'c6', title: 'The vent glitch that took the whole lobby', game: GAMES[2], createdUtc: minutes(60 * 72), duration: 19, sizeBytes: 16000000, resolution: '1920x1080', link: 'https://chrono-clips.example.workers.dev/watch/w8Nq4vB7yLe0', uploadedUtc: minutes(60 * 71) },
+    { id: 'c5', title: 'Ace with the sheriff, no scope', game: GAMES[3], createdUtc: minutes(60 * 30), duration: 44, sizeBytes: 52000000, resolution: '1920x1080', link: 'https://chrono-clips.example.workers.dev/watch/k3p9Zt2mQxa1', uploadedUtc: minutes(60 * 29), canRemoveUpload: true },
+    { id: 'c6', title: 'The vent glitch that took the whole lobby', game: GAMES[2], createdUtc: minutes(60 * 72), duration: 19, sizeBytes: 16000000, resolution: '1920x1080', link: 'https://chrono-clips.example.workers.dev/watch/w8Nq4vB7yLe0', uploadedUtc: minutes(60 * 71), canRemoveUpload: true },
     { id: 'c7', title: 'Clutch 1v4', game: GAMES[3], createdUtc: minutes(60 * 24 * 9), duration: 57, sizeBytes: 60100000, resolution: '1920x1080', link: 'https://chrono-clips.example.workers.dev/watch/p2Xc6hD1sRu5', uploadedUtc: minutes(60 * 24 * 9) },
-  ].map((c) => ({ game: null, link: null, uploadedUtc: null, videoUrl: params.get('video') || '', fileName: `${c.id}.mp4`, ...c }));
+  ].map((c) => ({ game: null, link: null, uploadedUtc: null, canRemoveUpload: false, videoUrl: params.get('video') || '', fileName: `${c.id}.mp4`, ...c }));
 
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
@@ -98,13 +98,25 @@
       return { url, frames: Math.round(c.duration / 2) };
     },
     renameClip: async ({ id, title }) => { await wait(150); const c = find(id); c.title = title.trim() || c.title; return { clip: copy(c) }; },
-    deleteClip: async ({ id }) => { clips = clips.filter((c) => c.id !== id); setTimeout(() => Chrono.bridge.emit('libraryChanged'), 0); return {}; },
+    deleteClip: async ({ id, removeUpload }) => {
+      const c = find(id);
+      if (removeUpload && !c.canRemoveUpload) throw new Error('This clip was uploaded by an older version of Chrono, so it can\'t be removed from here.');
+      clips = clips.filter((x) => x.id !== id); setTimeout(() => Chrono.bridge.emit('libraryChanged'), 0); return {};
+    },
+    removeUpload: async ({ id }) => {
+      await wait(150);
+      const c = find(id);
+      if (!c.canRemoveUpload) throw new Error('This clip was uploaded by an older version of Chrono, so it can\'t be removed from here. Whoever runs the server can remove it.');
+      c.link = null; c.uploadedUtc = null; c.canRemoveUpload = false;
+      setTimeout(() => Chrono.bridge.emit('libraryChanged'), 0);
+      return { clip: copy(c) };
+    },
     copyLink: async () => ({}),
     showInFolder: async () => ({}),
     openClipsFolder: async () => ({}),
     uploadClip: async ({ id }) => {
       for (let i = 1; i <= 10; i++) { await wait(180); Chrono.bridge.emit('uploadProgress', { id, fraction: i / 10 }); }
-      const c = find(id); c.link = `https://chrono-clips.example.workers.dev/watch/${id}Zx9q`; c.uploadedUtc = new Date().toISOString();
+      const c = find(id); c.link = `https://chrono-clips.example.workers.dev/watch/${id}Zx9q`; c.uploadedUtc = new Date().toISOString(); c.canRemoveUpload = true;
       setTimeout(() => Chrono.bridge.emit('libraryChanged'), 0);
       return { clip: copy(c) };
     },
@@ -200,7 +212,9 @@
     },
   };
 
+  Chrono.bridge.calls = [];   // what the page asked for, so the tests can check it
   Chrono.bridge.request = async (action, payload) => {
+    Chrono.bridge.calls.push({ action, payload: payload || {} });
     const handler = handlers[action];
     if (!handler) throw new Error(`The mock has no "${action}".`);
     return handler(payload || {});

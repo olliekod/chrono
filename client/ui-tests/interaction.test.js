@@ -177,12 +177,36 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('and the main button becomes Copy link', [...doc.querySelectorAll('.modal-foot .btn')].some((b) => /Copy link/.test(b.textContent)));
   check('a toast says the link was copied', /Link copied/.test(doc.querySelector('.toasts').textContent));
 
-  // ------------------------------------------------------------------ delete
-  [...doc.querySelectorAll('.modal-foot .btn')].find((b) => /Delete/.test(b.textContent)).click();
-  check('delete asks first', [...doc.querySelectorAll('.modal-foot .btn')].some((b) => /Recycle Bin/.test(b.textContent)));
-  [...doc.querySelectorAll('.modal-foot .btn')].find((b) => /Recycle Bin/.test(b.textContent)).click();
+  // --------------------------------------------- remove upload (keeps the clip) and delete
+  const footBtn = (re) => [...doc.querySelectorAll('.modal-foot .btn')].find((b) => re.test(b.textContent) && !b.hidden);
+  const barBtn = (re) => [...doc.querySelectorAll('.confirm-bar .btn')].find((b) => re.test(b.textContent));
+  const calls = (action) => window.Chrono.bridge.calls.filter((c) => c.action === action);
+  const bar = () => doc.querySelector('.confirm-bar');
+
+  check('a clip that was just uploaded offers Remove upload beside Delete', !!footBtn(/Remove upload/) && !!footBtn(/Delete/));
+  check('nothing is being asked yet', bar().hidden);
+
+  footBtn(/Remove upload/).click();
+  check('Remove upload asks first, and says the link stops working and the clip stays', !bar().hidden && /stop working for everyone/.test(bar().textContent) && /stays on this PC/.test(bar().textContent));
+  barBtn(/Cancel/).click();
+  check('cancelling asks nothing of the server and changes nothing', bar().hidden && calls('removeUpload').length === 0 && !!doc.querySelector('.link-box'));
+
+  footBtn(/Remove upload/).click();
+  barBtn(/^\s*Remove upload/).click();
+  await until(() => /Upload removed/.test(doc.querySelector('.toasts').textContent), 'upload removed toast');
+  check('removing the upload asks the app once, for this clip', calls('removeUpload').length === 1);
+  await until(() => !doc.querySelector('.link-box'), 'link gone after removal');
+  check('the link is gone and the clip is still open', !doc.querySelector('.link-box') && !!doc.querySelector('.modal'));
+  check('Upload is offered again, and Remove upload is not', !!footBtn(/Upload/) && !footBtn(/Remove upload/));
+
+  // Delete of a clip that is not uploaded: one question, one way to say yes.
+  footBtn(/Delete/).click();
+  check('delete asks first, plainly', !bar().hidden && /Recycle Bin/.test(bar().textContent) && !/cloud/.test(bar().textContent));
+  check('a clip that is not uploaded is only offered the Recycle Bin', !!barBtn(/Move to Recycle Bin/) && !barBtn(/cloud/i));
+  barBtn(/Move to Recycle Bin/).click();
   await until(() => !doc.querySelector('.modal'), 'editor closes after delete');
   check('deleting closes the editor', true);
+  check('and it asked for a local delete only', calls('deleteClip').length === 1 && calls('deleteClip')[0].payload.removeUpload === false);
   await until(() => doc.querySelectorAll('.card').length === 7, 'library refreshed (7 again: +1 copy -1 deleted)');
   check('and the clip leaves the library', ![...doc.querySelectorAll('.card-title')].some((t) => /\(trimmed\)/.test(t.textContent)));
 
@@ -191,6 +215,43 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   await until(() => doc.querySelector('.modal'), 'editor opens again');
   doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   check('Esc closes the editor', !doc.querySelector('.modal'));
+
+  // -------------------------------------- deleting a clip that is also in the cloud
+  const openCard = async (re) => {
+    [...doc.querySelectorAll('.card')].find((c) => re.test(c.textContent)).click();
+    await until(() => doc.querySelector('.modal'), 'editor opens');
+  };
+
+  await openCard(/Ace with the sheriff/);
+  check('an uploaded clip you uploaded shows both buttons', !!footBtn(/Remove upload/) && !!footBtn(/Delete/));
+  footBtn(/Delete/).click();
+  check('deleting it asks whether to delete it from the cloud too', /Would you also like to delete it from the cloud/.test(bar().textContent) && /stop working/.test(bar().textContent));
+  check('with a choice of both, and a way out', !!barBtn(/Delete here and from the cloud/) && !!barBtn(/Delete only from this PC/) && !!barBtn(/Cancel/));
+  check('the question starts on Cancel, so a stray Enter deletes nothing', doc.activeElement === barBtn(/Cancel/));
+  check('the question starts on Cancel, so a stray Enter deletes nothing', doc.activeElement === barBtn(/Cancel/));
+  doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  check('Esc answers the question with no, and does not close the clip', bar().hidden && !!doc.querySelector('.modal'));
+  footBtn(/Delete/).click();
+  barBtn(/Delete only from this PC/).click();
+  await until(() => !doc.querySelector('.modal'), 'editor closes');
+  check('"only from this PC" keeps the cloud copy', calls('deleteClip').at(-1).payload.removeUpload === false && calls('removeUpload').length === 1);
+  await until(() => ![...doc.querySelectorAll('.card')].some((c) => /Ace with the sheriff/.test(c.textContent)), 'the clip leaves the library');
+
+  await openCard(/vent glitch/);
+  footBtn(/Delete/).click();
+  barBtn(/Delete here and from the cloud/).click();
+  await until(() => !doc.querySelector('.modal'), 'editor closes after deleting from the cloud too');
+  check('"and from the cloud" asks for the upload to be removed as well', calls('deleteClip').at(-1).payload.removeUpload === true);
+  check('and says so', /removed from the cloud/.test(doc.querySelector('.toasts').textContent));
+
+  await openCard(/Clutch 1v4/);
+  check('a clip from an older Chrono has no Remove upload button', !footBtn(/Remove upload/));
+  footBtn(/Delete/).click();
+  check('deleting it says the online copy stays', /older version of Chrono/.test(bar().textContent) && /link working/.test(bar().textContent));
+  check('and offers only the local delete', !!barBtn(/Move to Recycle Bin/) && !barBtn(/cloud/i));
+  barBtn(/Cancel/).click();
+  doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await until(() => !doc.querySelector('.modal'), 'editor closes');
 
   // --------------------------------------------------------------- recording
   doc.querySelectorAll('.nav-item')[1].click();

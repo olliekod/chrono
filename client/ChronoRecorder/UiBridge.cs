@@ -71,6 +71,7 @@ namespace ChronoRecorder
                 ["getFilmstrip"] = GetFilmstrip,
                 ["renameClip"] = RenameClip,
                 ["deleteClip"] = DeleteClip,
+                ["removeUpload"] = RemoveUpload,
                 ["uploadClip"] = UploadClip,
                 ["copyLink"] = CopyLink,
                 ["trimClip"] = TrimClip,
@@ -191,15 +192,44 @@ namespace ChronoRecorder
             var settings = UploadRules.SettingsFrom(config);
             if (updated.IsUploaded && !string.IsNullOrEmpty(updated.RemoteId) && settings != null)
             {
-                try { await uploader.RenameAsync(settings, updated.RemoteId!, updated.Title); }
+                try { await uploader.RenameAsync(settings, updated.RemoteId!, updated.Title, updated.OwnerToken); }
                 catch (UploadException ex) { remoteError = ex.Message; }
             }
             return new { clip = Dto(updated), remoteError };
         }
 
+        /// <summary>
+        /// Take the clip's uploaded copy off the server and make it an ordinary local clip again. Only the app that uploaded
+        /// a clip holds its owner token, so this can only ever remove your own uploads.
+        /// </summary>
+        private async Task RemoveFromServer(ClipRecord clip)
+        {
+            if (!clip.IsUploaded) throw new InvalidOperationException("That clip isn't uploaded.");
+            if (string.IsNullOrEmpty(clip.OwnerToken) || string.IsNullOrEmpty(clip.RemoteId))
+                throw new InvalidOperationException("This clip was uploaded by an older version of Chrono, so it can't be removed from here. Whoever runs the server can remove it.");
+
+            var settings = UploadRules.SettingsFrom(config)
+                ?? throw new UploadException("The server address and upload key aren't set, so Chrono can't reach the uploaded copy. Add them in Settings.");
+
+            await uploader.RemoveAsync(settings, clip.RemoteId!, clip.OwnerToken!);
+            library.ClearUpload(clip.Id);
+        }
+
+        private async Task<object?> RemoveUpload(JObject request)
+        {
+            var clip = Need(request);
+            await RemoveFromServer(clip);
+            return new { clip = Dto(library.Find(clip.Id)!) };
+        }
+
         private async Task<object?> DeleteClip(JObject request)
         {
             var clip = Need(request);
+
+            // "Also remove it from the cloud" goes first: if the server can't be reached, nothing has been deleted and the
+            // person can try again, or delete only the copy on this PC.
+            if (request.Value<bool?>("removeUpload") ?? false) await RemoveFromServer(clip);
+
             // The page has just let go of the video; give Windows a moment to close the file.
             for (int attempt = 1; ; attempt++)
             {
@@ -227,7 +257,7 @@ namespace ChronoRecorder
                 var progress = new Progress<double>(f => PushEvent("uploadProgress", new { id = clip.Id, fraction = f }));
                 var result = await uploader.UploadAsync(path, settings, info, progress);
 
-                library.MarkUploaded(clip.Id, result.Link, result.ClipId);
+                library.MarkUploaded(clip.Id, result.Link, result.ClipId, result.OwnerToken);
                 host.CopyToClipboard(result.Link);
                 return new { clip = Dto(library.Find(clip.Id)!) };
             }

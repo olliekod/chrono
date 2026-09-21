@@ -71,7 +71,11 @@ If a game records as a black picture, open **Settings > Recording** and set **Ca
 
 Uploading needs a Chrono server, run by whoever gave you this app. In **Settings > Uploading**, enter the server address and upload key they send you (keep the key private). You can also set the username shown on your links; it starts as `username`. The address and key are blank in a fresh install. Then open a clip in the Library and press **Upload**. When it finishes, the link is on your clipboard, and uploaded clips keep a **Copy link** button.
 
-Links do not expire. An uploaded clip stays on the server until whoever runs it removes it, and deleting a clip in Chrono removes only the copy on your PC.
+Links do not expire. An uploaded clip stays on the server until you remove it.
+
+Open an uploaded clip and press **Remove upload** to take it off the server. The link stops working and the clip stays on your PC. **Delete** removes the clip from your PC and, if it is also uploaded, asks whether to delete the cloud copy too.
+
+You can only remove clips you uploaded yourself. When an upload starts, the server gives your copy of Chrono a secret for that clip, and removing or renaming it needs that secret as well as the upload key. Someone else who has the key and even knows a clip's address cannot remove it. Clips uploaded by an older version of Chrono have no secret, so only whoever runs the server can remove those.
 
 ## Sound
 

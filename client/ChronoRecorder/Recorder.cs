@@ -1060,7 +1060,7 @@ namespace ChronoRecorder
 
             if (autoGame != null)
             {
-                Console.WriteLine($"{autoGame.Candidate.DisplayName} closed");
+                Note($"{autoGame.Candidate.DisplayName} closed");
                 autoGame = null;
             }
 
@@ -1072,7 +1072,7 @@ namespace ChronoRecorder
             autoGame = games.FirstOrDefault(g => g.Candidate == chosen);
             windowCaptureFailed = false;   // a different game may well work as a window
             loggedWaiting = false;
-            if (autoGame != null) Console.WriteLine($"Game found: {autoGame.Candidate.DisplayName} ({autoGame.Candidate.ProcessName})");
+            if (autoGame != null) Note($"Game found: {autoGame.Candidate.DisplayName} ({autoGame.Candidate.ProcessName})");
         }
 
         /// <summary>

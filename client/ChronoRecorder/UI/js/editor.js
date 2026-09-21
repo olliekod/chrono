@@ -73,7 +73,11 @@
     const infoRow = h('div', { class: 'info-row' });
     const linkHost = h('div');
 
-    const deleteHost = h('span');
+    // Two separate actions. Delete removes the clip from this PC (and, if it is uploaded, offers to remove the cloud copy too).
+    // Remove upload takes only the uploaded copy off the server and keeps the clip here.
+    const deleteBtn = h('button', { class: 'btn ghost', onClick: askDelete }, icon('trash'), 'Delete');
+    const removeUploadBtn = h('button', { class: 'btn ghost', onClick: askRemoveUpload, hidden: true, title: 'Take the uploaded copy off the server. The clip stays on this PC.' }, icon('cloud'), 'Remove upload');
+    const confirmBar = h('div', { class: 'confirm-bar', role: 'alertdialog', 'aria-label': 'Are you sure?', hidden: true });
     const showBtn = h('button', { class: 'btn ghost', onClick: () => bridge.request('showInFolder', { id: clip.id }).catch(fail) }, icon('folder'), 'Show in folder');
     const saveTrimBtn = h('button', { class: 'btn primary', onClick: () => saveTrim(false), title: 'Replace this clip with the trimmed version' }, icon('scissors'), 'Save trim');
     const saveCopyBtn = h('button', { class: 'btn', onClick: () => saveTrim(true), title: 'Keep the original and make a new clip' }, 'Save as new clip');
@@ -88,7 +92,8 @@
         player,
         h('div', { class: 'controls' }, playBtn, timeText, h('span', { class: 'spacer' }), muteBtn, volumeSlider, volumeText, fullscreenBtn),
         timeline, readout, infoRow, linkHost),
-      h('div', { class: 'modal-foot' }, deleteHost, showBtn, h('span', { class: 'spacer' }), saveCopyBtn, saveTrimBtn, mainHost));
+      confirmBar,
+      h('div', { class: 'modal-foot' }, deleteBtn, removeUploadBtn, showBtn, h('span', { class: 'spacer' }), saveCopyBtn, saveTrimBtn, mainHost));
 
     const overlay = h('div', { class: 'overlay', onMousedown: (e) => { if (e.target === overlay) close(); } }, modal);
     root.document.body.append(overlay);
@@ -172,6 +177,8 @@
     function paintShare() {
       linkHost.textContent = '';
       mainHost.textContent = '';
+      // Only a clip you uploaded from this app can be taken off the server (the server checks that too).
+      removeUploadBtn.hidden = !clip.canRemoveUpload;
       if (clip.link) {
         const input = h('input', { type: 'text', readonly: true, value: clip.link, 'aria-label': 'Share link', onFocus: (e) => e.target.select() });
         linkHost.append(h('div', { class: 'link-box' }, icon('link'), input,
@@ -192,16 +199,38 @@
       mainHost.append(upload);
     }
 
-    function paintDelete(confirming) {
-      deleteHost.textContent = '';
-      if (!confirming) {
-        deleteHost.append(h('button', { class: 'btn ghost', onClick: () => paintDelete(true) }, icon('trash'), 'Delete'));
-        return;
+    // ------------------------------------------------------- asking before anything is deleted
+    function closeAsk() { confirmBar.hidden = true; confirmBar.textContent = ''; }
+
+    function ask(question, buttons) {
+      confirmBar.textContent = '';
+      confirmBar.append(h('p', { text: question }), h('div', { class: 'confirm-buttons' }, buttons,
+        h('button', { class: 'btn ghost', onClick: closeAsk }, 'Cancel')));
+      confirmBar.hidden = false;
+      // Start on Cancel: an accidental Enter or Space must never be what deletes something.
+      const cancel = confirmBar.querySelector('.btn.ghost');
+      if (cancel) cancel.focus();
+    }
+
+    function askDelete() {
+      if (busy) return;
+      if (!clip.link) {
+        ask('Move this clip to the Recycle Bin? You can get it back from there.',
+          [h('button', { class: 'btn danger', onClick: () => doDelete(false) }, icon('trash'), 'Move to Recycle Bin')]);
+      } else if (clip.canRemoveUpload) {
+        ask('This clip is also uploaded. Would you also like to delete it from the cloud? Its link will stop working for everyone.',
+          [h('button', { class: 'btn danger', onClick: () => doDelete(true) }, icon('trash'), 'Delete here and from the cloud'),
+           h('button', { class: 'btn', onClick: () => doDelete(false) }, 'Delete only from this PC')]);
+      } else {
+        ask('This clip is also online, uploaded by an older version of Chrono, so Chrono can\'t remove that copy. Moving it to the Recycle Bin leaves the link working.',
+          [h('button', { class: 'btn danger', onClick: () => doDelete(false) }, icon('trash'), 'Move to Recycle Bin')]);
       }
-      deleteHost.append(
-        h('button', { class: 'btn danger', onClick: doDelete }, icon('trash'), 'Move to Recycle Bin'),
-        ' ',
-        h('button', { class: 'btn ghost', onClick: () => paintDelete(false) }, 'Cancel'));
+    }
+
+    function askRemoveUpload() {
+      if (busy) return;
+      ask('Remove the uploaded copy? Its link will stop working for everyone. The clip stays on this PC.',
+        [h('button', { class: 'btn danger', onClick: doRemoveUpload }, icon('cloud'), 'Remove upload')]);
     }
 
     function paintAll() {
@@ -410,26 +439,49 @@
       if (updated) { clip = updated; paintAll(); }
     }
 
-    async function doDelete() {
+    async function doDelete(alsoFromCloud) {
+      closeAsk();
       busy = true;
       releaseVideo();
-      showBusy('Moving to the Recycle Bin…');
+      showBusy(alsoFromCloud ? 'Removing the upload and deleting the clip…' : 'Moving to the Recycle Bin…');
       try {
-        await bridge.request('deleteClip', { id: clip.id });
-        Chrono.toast('good', 'Moved to the Recycle Bin', clip.title);
+        // The cloud copy goes first on the app's side: if it can't be reached, nothing has been deleted yet.
+        await bridge.request('deleteClip', { id: clip.id, removeUpload: !!alsoFromCloud });
+        Chrono.toast('good', alsoFromCloud ? 'Deleted, and removed from the cloud' : 'Moved to the Recycle Bin', clip.title);
         close();
       } catch (err) {
         busy = false;
         hideBusy();
         attachVideo();
-        paintDelete(false);
-        fail(err);
+        Chrono.toast('error', 'Nothing was deleted', err.message);
+      }
+    }
+
+    async function doRemoveUpload() {
+      closeAsk();
+      busy = true; paintTrim();
+      showBusy('Removing the upload…');
+      try {
+        const result = await bridge.request('removeUpload', { id: clip.id });
+        clip = result.clip;
+        Chrono.toast('good', 'Upload removed', 'The link no longer works. The clip is still on this PC.');
+        paintShare();
+      } catch (err) {
+        Chrono.toast('error', "Couldn't remove the upload", err.message);
+      } finally {
+        busy = false;
+        hideBusy();
+        paintTrim();
       }
     }
 
     function onKey(e) {
       if (root.document.fullscreenElement) return;   // in full screen, Esc leaves full screen; it must not also close the clip
-      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (!confirmBar.hidden) closeAsk(); else close();   // Esc answers "are you sure?" with no before it closes the clip
+        return;
+      }
       const tag = (root.document.activeElement && root.document.activeElement.tagName) || '';
       if (e.key === ' ' && tag !== 'INPUT' && tag !== 'BUTTON') { e.preventDefault(); togglePlay(); }
       if ((e.key === 'f' || e.key === 'F') && tag !== 'INPUT' && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); toggleFullscreen(); }
@@ -461,7 +513,6 @@
     const api = { close };
 
     // ------------------------------------------------------------------ start
-    paintDelete(false);
     paintAll();
     attachVideo();
     loadStrip();

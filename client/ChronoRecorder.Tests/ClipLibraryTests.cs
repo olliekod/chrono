@@ -113,6 +113,44 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public void TheOwnerToken_IsKeptWithTheUpload_AcrossRestarts()
+        {
+            Clip("a.mp4");
+            var first = NewLibrary();
+            first.Refresh();
+            string id = first.Snapshot().Single().Id;
+
+            first.MarkUploaded(id, "https://clips.test/watch/abc123", "abc123", "secret-token");
+
+            var second = NewLibrary();
+            second.Refresh();
+            Assert.Equal("secret-token", second.Snapshot().Single().OwnerToken);
+            Assert.Equal("secret-token", second.Find(id)!.OwnerToken);   // and copies carry it too
+        }
+
+        [Fact]
+        public void ClearingAnUpload_MakesItAnOrdinaryLocalClipAgain_KeepingItsTitle()
+        {
+            Clip("a.mp4");
+            var library = NewLibrary();
+            library.Refresh();
+            string id = library.Snapshot().Single().Id;
+            library.Rename(id, "Triple kill");
+            library.MarkUploaded(id, "https://clips.test/watch/abc123", "abc123", "secret-token");
+
+            Assert.True(library.ClearUpload(id));
+
+            var clip = library.Find(id)!;
+            Assert.False(clip.IsUploaded);
+            Assert.Null(clip.Link);
+            Assert.Null(clip.RemoteId);
+            Assert.Null(clip.UploadedUtc);
+            Assert.Null(clip.OwnerToken);
+            Assert.Equal("Triple kill", clip.Title);
+            Assert.True(File.Exists(library.PathOf(clip)));   // the video stays on this PC
+        }
+
+        [Fact]
         public void UploadedClips_KeepTheirLinkAcrossRefreshesAndRestarts()
         {
             Clip("a.mp4");
