@@ -11,7 +11,7 @@ Chrono is lightweight clipping software for Windows that shares clips as links, 
 
 ## How light is it?
 
-These are Chrono's own measurements, taken on an RTX 4080 recording a 2560x1440 monitor at 60 FPS:
+These are Chrono's own measurements, taken on an i7-13700k, RTX 4080 OC, 64Gb DDR5, recording a 2560x1440 monitor at 60 FPS:
 
 - Recording uses about 3 to 5% of one CPU core.
 - In the tray with the window closed, Chrono uses about 19 MB of memory. With the window open it uses about 225 MB, and it goes back to 19 MB when you close it.
