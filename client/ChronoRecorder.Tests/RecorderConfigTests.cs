@@ -69,6 +69,20 @@ namespace ChronoRecorder.Tests
             Assert.Equal("", config.UploadKey);
         }
 
+        [Fact]
+        public void TheOldDefaultBitrate_BecomesAutomatic_ButAChosenOneIsKept()
+        {
+            var old = new RecorderConfig { Bitrate = 8000 };
+            old.MigrateLegacyValues();
+            Assert.Equal(0, old.Bitrate);
+
+            var chosen = new RecorderConfig { Bitrate = 15000 };
+            chosen.MigrateLegacyValues();
+            Assert.Equal(15000, chosen.Bitrate);
+
+            Assert.Equal(0, new RecorderConfig().Bitrate);   // automatic is the default
+        }
+
         [Theory]
         [InlineData("https://chrono-clips.fly.dev")]
         [InlineData("https://CHRONO-CLIPS.FLY.DEV/")]

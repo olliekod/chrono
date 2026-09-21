@@ -20,7 +20,8 @@ namespace ChronoRecorder
 
         /// <summary>Shared key that lets this app upload. Stored as plain text in the user's config file.</summary>
         public string UploadKey { get; set; } = "";
-        public int Bitrate { get; set; } = 8000;
+        /// <summary>Video bitrate in kbps. 0 means automatic: it follows the picture size and frame rate (see <see cref="BitrateSizing"/>).</summary>
+        public int Bitrate { get; set; } = 0;
         public int Fps { get; set; } = 60;
         /// <summary>
         /// The size of saved clips: "native" keeps the monitor's own size, a size like "1920x1080" shrinks clips on the GPU
@@ -98,6 +99,9 @@ namespace ChronoRecorder
             if (ApiUrl != null && ApiUrl.Contains("chrono-clips.fly.dev", StringComparison.OrdinalIgnoreCase))
                 ApiUrl = "";
 
+            // 8000 used to be the default for everyone; it was too little for 1440p and was never a choice.
+            if (Bitrate == BitrateSizing.LegacyDefaultKbps)
+                Bitrate = 0;
         }
 
         // Method to set default hotkeys

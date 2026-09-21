@@ -117,10 +117,9 @@ namespace ChronoRecorder
                 notifier?.Info("Uploading clip...", name);
 
                 // The clip may have been shrunk as it was saved, so read its real size rather than assuming.
-                var info = new ClipInfo(
-                    await Task.Run(() => MediaProbe.DurationSeconds(clipPath)),
-                    await Task.Run(() => MediaProbe.VideoSizeText(clipPath)) ?? recorder?.CaptureResolution,
-                    config.Fps, config.Bitrate);
+                double? duration = await Task.Run(() => MediaProbe.DurationSeconds(clipPath));
+                string? videoSize = await Task.Run(() => MediaProbe.VideoSizeText(clipPath)) ?? recorder?.CaptureResolution;
+                var info = new ClipInfo(duration, videoSize, config.Fps, BitrateSizing.Resolve(config.Bitrate, videoSize, config.Fps));
 
                 var result = await uploader.UploadAsync(clipPath, settings, info);
                 Console.WriteLine($"✓ Uploaded: {result.Link}");

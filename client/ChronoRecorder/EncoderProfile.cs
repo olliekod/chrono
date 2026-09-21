@@ -28,9 +28,12 @@ namespace ChronoRecorder
         {
             string name = Normalize(encoder);
 
+            // NVENC: variable bitrate with the high-quality tuning and adaptive quantisation, which spends bits on
+            // flat areas (sky, walls) where blocking is most visible, and the High profile. All of it runs on the
+            // encoder chip, not the game's GPU cores. The rate cap sits above the target so busy moments get room.
             string tuning = name switch
             {
-                "h264_nvenc" => "-preset p4",
+                "h264_nvenc" => "-preset p4 -tune hq -rc vbr -spatial-aq 1 -profile:v high",
                 "h264_amf" => "-quality speed",
                 "h264_qsv" => "-preset veryfast",
                 _ => "-preset ultrafast"
@@ -42,7 +45,7 @@ namespace ChronoRecorder
             string idr = name == "h264_nvenc" ? " -forced-idr 1" : "";
 
             return $"-c:v {name} {tuning} " +
-                   $"-b:v {bitrateKbps}k -maxrate {bitrateKbps}k -bufsize {bitrateKbps * 2}k " +
+                   $"-b:v {bitrateKbps}k -maxrate {bitrateKbps * 3 / 2}k -bufsize {bitrateKbps * 2}k " +
                    $"-g {fps * KeyframeIntervalSeconds} " +
                    $"-force_key_frames \"expr:gte(t,n_forced*{KeyframeIntervalSeconds})\"{idr}";
         }

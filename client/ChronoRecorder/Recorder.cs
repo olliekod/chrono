@@ -250,7 +250,7 @@ namespace ChronoRecorder
             audioCaptures = audio;
 
             var request = new CaptureRequest(
-                ResolveEncoder(), config.Fps, config.Bitrate, source,
+                ResolveEncoder(), config.Fps, BitrateSizing.Resolve(config.Bitrate, source.Bounds.Size, config.Fps), source,
                 SegmentSeconds, SegmentTracker.NamePattern(config.TempFolder, run),
                 Audio: audio.Select(a => a.Input).ToList(),
                 ClockStartUnixSeconds: audio.Count > 0 ? clockStart : null);
@@ -484,7 +484,7 @@ namespace ChronoRecorder
                 string encoder = ResolveEncoder();
                 ExportRequest Request(ExportMode mode) => new ExportRequest(
                     concatFilePath, outputPath, plan.SeekSeconds, lengthSeconds, mode,
-                    size ?? nativeSize, encoder, config.Bitrate, config.Fps);
+                    size ?? nativeSize, encoder, BitrateSizing.Resolve(config.Bitrate, size ?? nativeSize, config.Fps), config.Fps);
 
                 if (size == null)
                 {

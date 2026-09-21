@@ -462,8 +462,8 @@
 
             <div class="form-group">
                 <label>Bitrate (kbps)</label>
-                <input type="number" id="bitrate" min="2000" max="50000" step="1000">
-                <div class="info-text">Higher = better quality, larger files (recommended: 8000)</div>
+                <input type="number" id="bitrate" min="0" max="80000" step="1000" placeholder="0 = automatic">
+                <div class="info-text">0 = automatic (recommended): scales with your screen size and FPS, about 20000 for 1440p60. Higher = sharper video, larger files.</div>
             </div>
 
             <div class="form-group">
@@ -601,7 +601,7 @@
             document.getElementById('recordMic').checked = receivedConfig.RecordMicrophone === true;
             document.getElementById('resolution').value = receivedConfig.Resolution || '1920x1080';
             document.getElementById('fps').value = receivedConfig.Fps || 60;
-            document.getElementById('bitrate').value = receivedConfig.Bitrate || 8000;
+            document.getElementById('bitrate').value = receivedConfig.Bitrate || 0;
             document.getElementById('encoder').value = receivedConfig.Encoder || 'h264_nvenc';
             document.getElementById('detected-encoder').textContent = receivedConfig.Encoder || 'Unknown';
 
@@ -709,7 +709,7 @@
                 UploadKey: document.getElementById('uploadKey').value.trim(),
                 Resolution: document.getElementById('resolution').value,
                 Fps: parseInt(document.getElementById('fps').value),
-                Bitrate: parseInt(document.getElementById('bitrate').value),
+                Bitrate: parseInt(document.getElementById('bitrate').value) || 0,
                 Encoder: document.getElementById('encoder').value,
                 Mode: receivedConfig.Mode,
                 RecorderEnabled: receivedConfig.RecorderEnabled,

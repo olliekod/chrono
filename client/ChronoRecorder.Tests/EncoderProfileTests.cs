@@ -53,12 +53,22 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public void Nvenc_UsesVariableBitrateWithQualityTuning_AndOtherEncodersDoNot()
+        {
+            string nvenc = EncoderProfile.BuildArgs("h264_nvenc", 20000, 60);
+            Assert.Contains("-tune hq -rc vbr -spatial-aq 1 -profile:v high", nvenc);
+
+            foreach (var other in new[] { "h264_amf", "h264_qsv", "libx264" })
+                Assert.DoesNotContain("-spatial-aq", EncoderProfile.BuildArgs(other, 20000, 60));   // NVENC-only options
+        }
+
+        [Fact]
         public void Args_SetBitrateAndVbvBuffer()
         {
             string args = EncoderProfile.BuildArgs("h264_nvenc", 6000, 30);
 
             Assert.Contains("-b:v 6000k", args);
-            Assert.Contains("-maxrate 6000k", args);
+            Assert.Contains("-maxrate 9000k", args);   // peaks may go 50% above the target
             Assert.Contains("-bufsize 12000k", args);
         }
 
