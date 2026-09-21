@@ -8,8 +8,18 @@
   #define SourceDir "..\dist\Chrono"
 #endif
 
-#define AppName "Chrono"
+#ifndef AppName
+  #define AppName "Chrono"
+#endif
 #define AppExe "ChronoRecorder.exe"
+; Identity and the "Start with Windows" entry. Only tests of this script change them, so a test install can never
+; overwrite or remove a real one.
+#ifndef AppGuid
+  #define AppGuid "{{6F1D2C58-9B47-4E0A-8C3B-5A7D1E4F2B90}"
+#endif
+#ifndef RunValue
+  #define RunValue "Chrono"
+#endif
 ; The process closed, and the cache folder removed, on install and uninstall. Only tests of this script change them.
 #ifndef ProcessName
   #define ProcessName "ChronoRecorder.exe"
@@ -19,7 +29,7 @@
 #endif
 
 [Setup]
-AppId={{6F1D2C58-9B47-4E0A-8C3B-5A7D1E4F2B90}
+AppId={#AppGuid}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Chrono
@@ -86,9 +96,14 @@ begin
   Result := True;
 end;
 
-procedure CurrentUninstallStepChanged(CurUninstallStep: TUninstallStep);
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Removed: Boolean;
 begin
   if CurUninstallStep = usUninstall then
+  begin
     // "Start with Windows" writes this value; leaving it would point Windows at a program that is gone.
-    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Chrono');
+    Removed := RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#RunValue}');
+    Log('Removed the Start with Windows entry: ' + IntToStr(Ord(Removed)));
+  end;
 end;

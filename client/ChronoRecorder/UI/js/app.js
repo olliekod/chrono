@@ -66,8 +66,11 @@
       content, toastHost);
   }
 
+  const diagnosticsShown = () => !!(state.status && state.status.showDiagnostics);
+
   function go(name, arg) {
     if (!pages[name]) name = 'library';
+    if (name === 'diagnostics' && !diagnosticsShown()) name = 'library';   // hidden in Settings: not reachable by a stale link either
     if (state.current && pages[state.current].unmount) pages[state.current].unmount();
     state.current = name;
     for (const [key, { button }] of Object.entries(navButtons)) {
@@ -90,6 +93,7 @@
   function renderStatus() {
     const s = state.status;
     if (!s) return;
+    if (navButtons.diagnostics) navButtons.diagnostics.button.hidden = !s.showDiagnostics;
     statusParts.avatar.querySelector('.initial').textContent = (s.username || 'C').trim().charAt(0).toUpperCase() || 'C';
     statusParts.avatar.querySelector('.dot').className = `dot ${s.state}`;
     statusParts.name.textContent = s.username || 'Chrono';

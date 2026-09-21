@@ -38,7 +38,7 @@ Chrono was built and measured on an RTX 4080. It has not been run on a GTX 1650 
 
 ## Diagnostics
 
-The **Diagnostics** page in the sidebar shows what Chrono is doing and what it costs while a game is recorded: the capture method, encoder, resolution and frame rate, bitrate, how much footage is buffered, processor and memory use, how busy the graphics card's video encoder and 3D engine are, encoding speed, dropped frames, and details of your PC. It also lists anything that looks wrong, in plain words.
+Diagnostics is off by default so the sidebar stays simple. Turn it on with **Settings > App > Show Diagnostics** and a **Diagnostics** page appears in the sidebar. It shows what Chrono is doing and what it costs while a game is recorded: the capture method, encoder, resolution and frame rate, bitrate, how much footage is buffered, processor and memory use, how busy the graphics card's video encoder and 3D engine are, encoding speed, dropped frames, and details of your PC. It also lists anything that looks wrong, in plain words.
 
 Press **Copy report** to put it on your clipboard as text you can paste into a chat. The report has no name, folders, server address or key in it. Chrono never sends it anywhere by itself.
 
@@ -49,6 +49,8 @@ Press **Copy report** to put it on your clipboard as text you can paste into a c
 3. Chrono opens once so you can look around, then stays in the system tray (bottom right, near the clock). Click its icon to open the window.
 
 FFmpeg and everything else Chrono needs is inside the installer. It runs on Windows 10 and 11. An NVIDIA card gives the lightest recording. AMD and Intel cards work but have had less testing.
+
+To update, run the new `Chrono-Setup.exe` over the old one. You don't need to uninstall first. The installer closes Chrono if it is running, replaces the program files, and leaves your clips and settings alone.
 
 If you prefer no installer, `Chrono-win-x64.zip` on the same page is a portable copy. Unzip it anywhere and run `ChronoRecorder.exe`.
 

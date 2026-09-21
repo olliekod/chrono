@@ -25,7 +25,7 @@
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
     selectedApplication: '', screen: '2560x1440', fps: 60, clipQuality: '1080p60', audio: 'Game sound and microphone', bufferSeconds: 140,
-    username: 'Oliver', canUpload: true,
+    username: 'Oliver', canUpload: true, showDiagnostics: false,
     hotkeys: [
       { name: 'Quick Clip', keys: ['Control', 'PageUp'], seconds: 30 },
       { name: 'Long Clip', keys: ['Control', 'PageDown'], seconds: 120 },
@@ -41,7 +41,7 @@
     Encoder: 'auto', Mode: 2, RecorderEnabled: true, SelectedApplication: '', OutputFolder: 'C:\\Users\\Player\\Videos\\Chrono',
     TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0,
     GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
-    FirstRunCompleted: true,
+    FirstRunCompleted: true, ShowDiagnostics: false,
     Hotkeys: [
       { Name: 'Quick Clip', Key: 'PageUp', Modifiers: ['Control'], ClipLengthSeconds: 30 },
       { Name: 'Long Clip', Key: 'PageDown', Modifiers: ['Control'], ClipLengthSeconds: 120 },
@@ -208,6 +208,8 @@
       const captureRestarted = next.GameCapture !== undefined && next.GameCapture !== config.GameCapture;
       const loadRestarted = ['Fps', 'Bitrate', 'Encoder', 'EncoderLoad'].some((k) => next[k] !== undefined && next[k] !== config[k]);
       Object.assign(config, next);
+      status.showDiagnostics = !!config.ShowDiagnostics;
+      Chrono.bridge.emit('status', copy(status));
       return { config: copy(config), hotkeyProblems: [], soundRestarted, captureRestarted, loadRestarted };
     },
   };

@@ -15,7 +15,7 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
+  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
@@ -295,6 +295,7 @@
       h('h2', { text: 'App' }),
       toggle('Start Chrono with Windows', 'Chrono stays in the tray and records games on its own. It has no overlay.', config.StartWithWindows !== false, (v) => { config.StartWithWindows = v; }),
       toggle('Show notifications', 'A small message when a clip is saved or something needs your attention.', config.ShowNotifications !== false, (v) => { config.ShowNotifications = v; }),
+      toggle('Show Diagnostics', 'Adds a Diagnostics page to the sidebar with live performance numbers and a report you can copy. Handy when something isn\'t working.', config.ShowDiagnostics === true, (v) => { config.ShowDiagnostics = v; }),
       h('div', { class: 'field', style: { marginTop: '22px' } }, h('label', { text: 'Clips folder' }),
         h('div', { class: 'selectable', style: { marginBottom: '8px', overflowWrap: 'anywhere' }, text: config.OutputFolder }),
         h('button', { class: 'btn', type: 'button', onClick: () => bridge.request('openClipsFolder').catch(() => {}) }, icon('folder'), 'Open folder')),

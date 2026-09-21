@@ -564,6 +564,45 @@ namespace ChronoRecorder.Tests
             Assert.True((bool?)data["loadRestarted"]);
         }
 
+        // ------------------------------------------------ showing and hiding the Diagnostics page
+
+        [Fact]
+        public async Task Diagnostics_IsHiddenUntilItIsTurnedOn()
+        {
+            Assert.False(new RecorderConfig().ShowDiagnostics);                                   // a new install
+            Assert.False((bool)(await Ok("getStatus"))["showDiagnostics"]!);
+
+            config.ShowDiagnostics = true;
+
+            Assert.True((bool)(await Ok("getStatus"))["showDiagnostics"]!);
+        }
+
+        [Fact]
+        public async Task TurningDiagnosticsOn_IsSaved_AndTheSidebarIsToldAtOnce()
+        {
+            var sent = JObject.FromObject(config);
+            sent["ShowDiagnostics"] = true;
+
+            await Ok("saveSettings", new { config = sent });
+
+            Assert.True(config.ShowDiagnostics);
+            Assert.Equal(1, saves);
+            var pushed = host.Posted.Select(JObject.Parse).Last(m => (string?)m["event"] == "status");
+            Assert.True((bool)pushed["data"]!["showDiagnostics"]!);   // the sidebar updates without a restart
+        }
+
+        [Fact]
+        public async Task TurningDiagnosticsOnOrOff_DoesNotRestartTheRecording()
+        {
+            var sent = JObject.FromObject(config);
+            sent["ShowDiagnostics"] = true;
+
+            var data = await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal(0, recorder.AudioRestarts);
+            Assert.False((bool?)data["loadRestarted"]);
+        }
+
         // ---------------------------------------------------------------- diagnostics
 
         [Fact]

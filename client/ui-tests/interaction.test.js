@@ -372,7 +372,18 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('changing the load says the recording restarted', true);
 
   // ------------------------------------------------------------------ diagnostics
-  [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent)).click();
+  const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
+  check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
+  [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
+  await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /^App$/.test(b.textContent)).click();
+  const diagSwitch = doc.querySelector('input[aria-label="Show Diagnostics"]');
+  check('Settings > App has a Show Diagnostics switch, off by default', !!diagSwitch && diagSwitch.checked === false);
+  diagSwitch.checked = true; diagSwitch.dispatchEvent(new window.Event('change', { bubbles: true }));
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+  await until(() => !diagNav().hidden, 'diagnostics appears in the sidebar');
+  check('turning it on adds Diagnostics to the sidebar straight away', !diagNav().hidden);
+  diagNav().click();
   await until(() => doc.querySelector('.diag-card'), 'the diagnostics page');
   const diagText = () => doc.querySelector('.content').textContent;
   check('the diagnostics page has its three sections', [...doc.querySelectorAll('.diag-card h3')].slice(0, 3).map((h3) => h3.textContent).join() === 'Recording,Performance,This PC');
@@ -396,6 +407,19 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   [...doc.querySelectorAll('.nav-item')].find((b) => /Library/.test(b.textContent)).click();
   await sleep(2600);
   check('leaving the diagnostics page stops it asking for numbers', !doc.querySelector('.diag-card') && asked === 0);
+
+  // Turning it off again hides it, and the page is not reachable any more.
+  [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
+  await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings again');
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /^App$/.test(b.textContent)).click();
+  const offSwitch = doc.querySelector('input[aria-label="Show Diagnostics"]');
+  offSwitch.checked = false; offSwitch.dispatchEvent(new window.Event('change', { bubbles: true }));
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+  await until(() => diagNav().hidden, 'diagnostics hidden again');
+  check('turning it off takes Diagnostics out of the sidebar again', diagNav().hidden);
+  window.location.hash = '#diagnostics';
+  window.Chrono.nav.go('diagnostics');
+  check('and a stale link to it goes to the library instead', !doc.querySelector('.diag-card'));
 
   // ------------------------------------------------------ empty library / paused
   const empty = await open('?state=empty');

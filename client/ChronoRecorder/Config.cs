@@ -122,6 +122,9 @@ namespace ChronoRecorder
         public bool CopyLinkToClipboard { get; set; } = true;
         public bool ShowNotifications { get; set; } = true;
 
+        /// <summary>Show the Diagnostics page in the sidebar. Off by default: it is for finding out why something isn't working, not for everyday use.</summary>
+        public bool ShowDiagnostics { get; set; } = false;
+
         /// <summary>Start Chrono (into the tray) when Windows starts. Only a real install is ever registered.</summary>
         public bool StartWithWindows { get; set; } = true;
 
