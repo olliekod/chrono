@@ -148,8 +148,43 @@ namespace ChronoRecorder
             });
         }
 
-        /// <summary>Fill in length and picture size for clips that don't have them yet (older clips, hand-added files).</summary>
+        /// <summary>
+        /// Fill in length and picture size for clips that don't have them yet (older clips, hand-added files).
+        /// One at a time: this is called at startup and again after every saved clip, and two passes together would
+        /// start FFmpeg twice for the same files. A call made while one is running is served by that one.
+        /// </summary>
         public void FillMissingDetails(CancellationToken ct = default)
+        {
+            lock (fillGate)
+            {
+                fillWanted = true;
+                if (filling) return;
+                filling = true;
+            }
+
+            try
+            {
+                while (true)
+                {
+                    lock (fillGate)
+                    {
+                        if (!fillWanted) return;
+                        fillWanted = false;
+                    }
+                    FillMissingDetailsOnce(ct);
+                }
+            }
+            finally
+            {
+                lock (fillGate) filling = false;
+            }
+        }
+
+        private readonly object fillGate = new object();
+        private bool filling;
+        private bool fillWanted;
+
+        private void FillMissingDetailsOnce(CancellationToken ct)
         {
             List<ClipRecord> missing;
             lock (gate) { EnsureLoaded(); missing = clips.Where(c => c.DurationSeconds == null || c.Resolution == null).Select(Clone).ToList(); }
@@ -160,8 +195,7 @@ namespace ChronoRecorder
                 string path = PathOf(clip);
                 if (!File.Exists(path)) continue;
 
-                double? duration = MediaProbe.DurationSeconds(path);
-                string? size = MediaProbe.VideoSizeText(path);
+                var (duration, size) = MediaProbe.Details(path);
                 if (duration == null && size == null) continue;
                 UpdateDetails(clip.Id, duration, size);
             }

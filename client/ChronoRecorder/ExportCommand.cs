@@ -60,7 +60,7 @@ namespace ChronoRecorder
                     // belong to the input, so they go before -i.)
                     parts.Add($"-c:v h264_cuvid -resize {r.Size.Width}x{r.Size.Height} -i \"{r.ListPath}\"");
                     parts.Add($"-t {Number(r.LengthSeconds)}");
-                    parts.Add(EncoderProfile.BuildArgs("h264_nvenc", r.BitrateKbps, r.Fps));
+                    parts.Add(EncoderProfile.BuildArgs("h264_nvenc", r.BitrateKbps, r.Fps, EncodeSpeed.Save));
                     parts.Add("-c:a copy");
                     break;
 
@@ -68,7 +68,7 @@ namespace ChronoRecorder
                     parts.Add($"-i \"{r.ListPath}\"");
                     parts.Add($"-t {Number(r.LengthSeconds)}");
                     parts.Add($"-vf \"scale={r.Size.Width}:{r.Size.Height}:flags=bicubic\"");
-                    parts.Add(EncoderProfile.BuildArgs(r.Encoder, r.BitrateKbps, r.Fps));
+                    parts.Add(EncoderProfile.BuildArgs(r.Encoder, r.BitrateKbps, r.Fps, EncodeSpeed.Save));
                     parts.Add("-c:a copy");
                     break;
             }

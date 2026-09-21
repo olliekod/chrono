@@ -76,8 +76,39 @@ namespace ChronoRecorder
             [PreserveSig] int GetDesc(out DxgiOutputDesc desc);
         }
 
+        // Reading DXGI means creating a factory and walking every adapter and output, which is far too much to do
+        // once per window: the game scan asks which monitor each window is on, several times every few seconds.
+        // Monitors change when someone plugs one in, so a second-old answer is still the right one.
+        private static readonly TimeSpan CacheTime = TimeSpan.FromMilliseconds(1000);
+        private static readonly object cacheGate = new object();
+        private static IReadOnlyList<MonitorInfo>? cached;
+        private static DateTime cachedAtUtc;
+
+        /// <summary>Forget the cached monitors, so the next question reads the hardware. Called before recording starts.</summary>
+        public static void Invalidate()
+        {
+            lock (cacheGate) cached = null;
+        }
+
         /// <summary>Every monitor attached to the desktop. Empty if DXGI can't be reached.</summary>
         public static IReadOnlyList<MonitorInfo> Enumerate()
+        {
+            lock (cacheGate)
+            {
+                if (cached != null && DateTime.UtcNow - cachedAtUtc < CacheTime) return cached;
+            }
+
+            var fresh = Read();
+
+            lock (cacheGate)
+            {
+                cached = fresh;
+                cachedAtUtc = DateTime.UtcNow;
+            }
+            return fresh;
+        }
+
+        private static IReadOnlyList<MonitorInfo> Read()
         {
             var result = new List<MonitorInfo>();
             IDXGIFactory1? factory = null;

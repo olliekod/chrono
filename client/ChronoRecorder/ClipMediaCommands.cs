@@ -85,7 +85,7 @@ namespace ChronoRecorder
             double length = r.EndSeconds - r.StartSeconds;
 
             return $"-hide_banner -nostats -loglevel warning -ss {Num(r.StartSeconds)} {decode}-i \"{r.Input}\" -t {Num(length)} " +
-                   $"{EncoderProfile.BuildArgs(r.Encoder, r.BitrateKbps, r.Fps)} -c:a copy -movflags +faststart -y \"{r.Output}\"";
+                   $"{EncoderProfile.BuildArgs(r.Encoder, r.BitrateKbps, r.Fps, EncodeSpeed.Save)} -c:a copy -movflags +faststart -y \"{r.Output}\"";
         }
     }
 }

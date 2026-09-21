@@ -110,13 +110,19 @@ namespace ChronoRecorder
             }
 
             // ---- video filters
-            if (audio.Count > 0)
+            if (r.ClockStartUnixSeconds is double clockStart)
             {
-                // FFmpeg zeroes each input's clock at that input's own first data, and video and audio start
-                // seconds apart by an amount nobody can observe. So don't rely on either: stamp every frame with
-                // (now - T0), and the audio feeder places sound at (capture time - T0). Both count from the same
-                // instant. This only relabels frames, so it costs nothing and they stay on the GPU.
-                string t0 = r.ClockStartUnixSeconds!.Value.ToString("F3", CultureInfo.InvariantCulture);
+                // Stamp every frame with the time it was captured, counted from T0. This is what makes a second of
+                // video a second of real time, which matters whether or not there is sound to line it up with:
+                //  - a window only sends a frame when it draws, and a game that is minimized, paused or showing a
+                //    still screen draws rarely or not at all. Without this, those stretches are dropped from the
+                //    recording with no sign of it, so "the last 30 seconds" covers far more than the last 30
+                //    seconds, and a minimized game jumps over the gap instead of holding its last frame. Measured
+                //    over 18 s with 6 s of it minimized: 16.3 s recorded with the clock, 11.93 s without,
+                //  - and when there is sound, the feeder places it at (capture time - T0) from the same instant, so
+                //    the two line up without either having to guess what the other did at startup.
+                // It only relabels frames, so it costs nothing and they stay on the GPU.
+                string t0 = clockStart.ToString("F3", CultureInfo.InvariantCulture);
                 videoFilters.Add($"setpts=(time(0)-{t0})/TB");
             }
 
@@ -128,8 +134,9 @@ namespace ChronoRecorder
             if (videoFilters.Count > 0)
                 parts.Add($"-vf \"{string.Join(",", videoFilters)}\"");
 
-            // Frames stamped by the clock arrive at slightly irregular times; a constant rate evens that out.
-            if (audio.Count > 0)
+            // Frames stamped by the clock arrive at slightly irregular times; a constant rate evens that out, and
+            // repeats the last frame through a stretch where the window sent none (a minimized game).
+            if (r.ClockStartUnixSeconds is not null)
                 parts.Add($"-fps_mode cfr -r {r.Fps}");
 
             if (r.Source.Method == CaptureMethod.Gdi)

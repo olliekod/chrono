@@ -34,6 +34,7 @@ namespace ChronoRecorder
 
         private System.Threading.Timer? monitorTimer;
         private System.Threading.Timer? pruneTimer;
+        private int monitorBusy;   // 1 while a monitor tick is running, so ticks can't overlap
         private string currentApplication = "";
 
         // Auto mode: the game found by the scanner, and when to look again.
@@ -44,6 +45,13 @@ namespace ChronoRecorder
         private bool windowCaptureFailed;
         private bool captureNeedsGameInFront;
         private bool loggedWaiting;
+
+        // FFmpeg was killed on purpose to reopen the sound devices, not because the capture broke.
+        private bool killedForAudio;
+
+        // Clips being saved right now. The buffer is not pruned while any is in flight: the export reads those very
+        // files, and deleting one halfway through would truncate or fail the clip.
+        private int exportsInFlight;
         private RunningGame? autoGame;
         private DateTime nextGameScanUtc = DateTime.MinValue;
         private static readonly TimeSpan GameScanInterval = TimeSpan.FromSeconds(3);
@@ -176,6 +184,7 @@ namespace ChronoRecorder
         private CaptureSource? ChooseSource()
         {
             captureNeedsGameInFront = false;
+            MonitorLocator.Invalidate();   // what is about to be recorded is worth reading from the hardware
 
             if (config.Mode == RecorderConfig.RecordingMode.Display)
                 return CaptureSourceChooser.Choose(PickMonitor(), PrimaryBounds());
@@ -242,12 +251,19 @@ namespace ChronoRecorder
         public void StopRecording()
         {
             Process? process;
+            List<AudioCapture> audio;
             lock (processLock)
             {
                 // Clearing these first tells the exit handler this stop was deliberate.
                 isRecording = false;
                 process = ffmpegProcess;
                 ffmpegProcess = null;
+
+                // Take this recording's own sound sources now. Waiting for FFmpeg below can take seconds, and a new
+                // recording may start in the meantime; disposing whatever was current by then would close the pipes
+                // of the recording that had just started, leaving it silent.
+                audio = audioCaptures;
+                audioCaptures = new List<AudioCapture>();
             }
 
             if (process != null)
@@ -268,7 +284,7 @@ namespace ChronoRecorder
                 }
             }
 
-            DisposeAudio();
+            foreach (var capture in audio) capture.Dispose();
             Console.WriteLine("✓ Recording stopped");
         }
 
@@ -312,6 +328,11 @@ namespace ChronoRecorder
             {
                 if (!audioCaptures.Contains(capture) || !isRecording) return;
                 process = ffmpegProcess;
+
+                // Tell the exit handler why FFmpeg is about to die. Without this, a headset unplugged in the first
+                // seconds of a recording looks like a capture that never started, and the game would be moved to
+                // screen capture for no reason.
+                killedForAudio = true;
             }
 
             Console.WriteLine($"⚠ {what} stopped ({reason}); restarting the recording");
@@ -351,7 +372,8 @@ namespace ChronoRecorder
                 ResolveEncoder(), config.Fps, BitrateSizing.Resolve(config.Bitrate, source.Bounds.Size, config.Fps), source,
                 SegmentSeconds, SegmentTracker.NamePattern(config.TempFolder, run),
                 Audio: audio.Select(a => a.Input).ToList(),
-                ClockStartUnixSeconds: audio.Count > 0 ? clockStart : null);
+                // Always: the clock is what keeps a second of video a second of real time, sound or no sound.
+                ClockStartUnixSeconds: clockStart);
 
             Console.WriteLine($"▶ Recording the {source.Bounds.Width}x{source.Bounds.Height} monitor at {config.Fps}fps via {source.Method}");
 
@@ -422,9 +444,32 @@ namespace ChronoRecorder
                 isRecording = false;
                 ffmpegProcess = null;
 
+                bool forAudio = killedForAudio;
+                killedForAudio = false;
+
                 try
                 {
-                    if (DateTime.UtcNow - started < StartupFailureWindow && source.Method == CaptureMethod.WindowCapture)
+                    var stoppedAt = DateTime.UtcNow;
+                    unexpectedExits.Enqueue(stoppedAt);
+                    while (unexpectedExits.Count > 0 && stoppedAt - unexpectedExits.Peek() > UnexpectedExitWindow)
+                        unexpectedExits.Dequeue();
+                    bool withinBudget = unexpectedExits.Count <= MaxUnexpectedExits;
+
+                    bool neverStarted = stoppedAt - started < StartupFailureWindow;
+
+                    // Restart after a capture we ended ourselves for the sound devices, or one that ran and then dropped
+                    // (a resolution change, a lock screen). A capture that dies at once is broken, and retrying it
+                    // would spin; those get the fallbacks below instead.
+                    if (withinBudget && (forAudio || !neverStarted))
+                    {
+                        Console.WriteLine(forAudio ? "Reopening the sound devices; restarting the recording." : $"⚠ Capture stopped ({detail}). Restarting.");
+                        var again = RefreshedSource(source);
+                        if (again == null) { Console.WriteLine("The game's window is gone; waiting for it."); return; }
+                        LaunchFfmpeg(again);
+                        return;
+                    }
+
+                    if (!forAudio && neverStarted && source.Method == CaptureMethod.WindowCapture)
                     {
                         // This game can't be captured as a window. Never fall back to "the monitor, always": ChooseSource uses
                         // the monitor only while the game is in front, and the next check (within a second) starts that.
@@ -434,7 +479,7 @@ namespace ChronoRecorder
                         return;
                     }
 
-                    if (DateTime.UtcNow - started < StartupFailureWindow && source.Method == CaptureMethod.DesktopDuplication)
+                    if (!forAudio && neverStarted && source.Method == CaptureMethod.DesktopDuplication)
                     {
                         // GPU capture never got going (another GPU, an unsupported setup...). GDI is heavier but works.
                         Console.WriteLine($"⚠ GPU screen capture failed to start ({detail}). Falling back to GDI capture.");
@@ -442,20 +487,7 @@ namespace ChronoRecorder
                         return;
                     }
 
-                    var now = DateTime.UtcNow;
-                    unexpectedExits.Enqueue(now);
-                    while (unexpectedExits.Count > 0 && now - unexpectedExits.Peek() > UnexpectedExitWindow)
-                        unexpectedExits.Dequeue();
-
-                    if (DateTime.UtcNow - started >= StartupFailureWindow && unexpectedExits.Count <= MaxUnexpectedExits)
-                    {
-                        // It was working and then the capture dropped (a resolution change, a lock screen...).
-                        Console.WriteLine($"⚠ Capture stopped ({detail}). Restarting.");
-                        var again = RefreshedSource(source);
-                        if (again == null) { Console.WriteLine("The game's window is gone; waiting for it."); return; }
-                        LaunchFfmpeg(again);
-                        return;
-                    }
+                    if (forAudio) detail = "the sound devices kept changing";
                 }
                 catch (Exception ex)
                 {
@@ -521,6 +553,9 @@ namespace ChronoRecorder
         /// </summary>
         private void PruneBuffer()
         {
+            // A clip being saved is reading these files. Pruning can wait a few seconds.
+            if (Volatile.Read(ref exportsInFlight) > 0) return;
+
             try
             {
                 int deleted = tracker.Prune(config.RequiredBufferSeconds, isRecording, currentRun);
@@ -562,6 +597,20 @@ namespace ChronoRecorder
         /// stay at the monitor's size, and otherwise shrinks it (on the NVIDIA GPU where possible) as it saves.
         /// </summary>
         public string SaveClip(int clipLengthSeconds, string clipName = "")
+        {
+            // Hold off the pruner for the whole job, planning included: the plan names the files the export will read.
+            System.Threading.Interlocked.Increment(ref exportsInFlight);
+            try
+            {
+                return SaveClipCore(clipLengthSeconds, clipName);
+            }
+            finally
+            {
+                System.Threading.Interlocked.Decrement(ref exportsInFlight);
+            }
+        }
+
+        private string SaveClipCore(int clipLengthSeconds, string clipName)
         {
             Size? exportSize = ExportPlanner.ExportSize(config.Resolution, nativeSize);
             bool transcode = exportSize != null;
@@ -621,7 +670,7 @@ namespace ChronoRecorder
 
                 if (size == null)
                 {
-                    RunFfmpeg(ExportCommand.Build(Request(ExportMode.Copy)));
+                    RunFfmpeg(ExportCommand.Build(Request(ExportMode.Copy)), ExportTimeoutMs(lengthSeconds));
                     return;
                 }
 
@@ -629,7 +678,7 @@ namespace ChronoRecorder
                 {
                     try
                     {
-                        RunFfmpeg(ExportCommand.Build(Request(ExportMode.Gpu)));
+                        RunFfmpeg(ExportCommand.Build(Request(ExportMode.Gpu)), ExportTimeoutMs(lengthSeconds));
                         Console.WriteLine($"  resized {nativeSize.Width}x{nativeSize.Height} -> {size.Value.Width}x{size.Value.Height} on the GPU");
                         return;
                     }
@@ -640,8 +689,24 @@ namespace ChronoRecorder
                     }
                 }
 
-                RunFfmpeg(ExportCommand.Build(Request(ExportMode.Cpu)));
-                Console.WriteLine($"  resized {nativeSize.Width}x{nativeSize.Height} -> {size.Value.Width}x{size.Value.Height} in software");
+                try
+                {
+                    RunFfmpeg(ExportCommand.Build(Request(ExportMode.Cpu)), ExportTimeoutMs(lengthSeconds));
+                    Console.WriteLine($"  resized {nativeSize.Width}x{nativeSize.Height} -> {size.Value.Width}x{size.Value.Height} in software");
+                    return;
+                }
+                catch (Exception ex) when (EncoderProfile.Normalize(encoder) != "libx264")
+                {
+                    // Scaling was done in software, but the picture was still encoded by the graphics card. If that is
+                    // what is broken, the clip is already recorded and only needs encoding, so try it on the processor
+                    // rather than lose it.
+                    Console.WriteLine($"⚠ The {encoder} encoder failed ({ex.Message}); encoding this clip on the processor");
+                    try { File.Delete(outputPath); } catch { }
+                }
+
+                var software = Request(ExportMode.Cpu) with { Encoder = "libx264" };
+                RunFfmpeg(ExportCommand.Build(software), ExportTimeoutMs(lengthSeconds));
+                Console.WriteLine($"  resized {nativeSize.Width}x{nativeSize.Height} -> {size.Value.Width}x{size.Value.Height} on the processor");
             }
             finally
             {
@@ -649,8 +714,16 @@ namespace ChronoRecorder
             }
         }
 
+        /// <summary>
+        /// How long to allow an export before calling it stuck. A software encode of a long clip on a slow PC is
+        /// the worst case, so the allowance grows with the clip instead of being one number that a two-minute
+        /// clip could exceed on an old processor.
+        /// </summary>
+        private static int ExportTimeoutMs(double lengthSeconds)
+            => (int)Math.Clamp(60_000 + lengthSeconds * 8_000, 180_000, 900_000);
+
         /// <summary>Run FFmpeg to completion; throw with its own message if it fails or takes too long.</summary>
-        private static void RunFfmpeg(string arguments)
+        private static void RunFfmpeg(string arguments, int timeoutMs = 180_000)
         {
             using var process = new Process
             {
@@ -668,7 +741,7 @@ namespace ChronoRecorder
             // Drain stderr while waiting so a chatty FFmpeg can't fill the pipe and hang.
             var stderr = process.StandardError.ReadToEndAsync();
 
-            if (!process.WaitForExit(180_000))
+            if (!process.WaitForExit(timeoutMs))
             {
                 try { process.Kill(); } catch { }
                 throw new TimeoutException("FFmpeg took too long to save the clip");
@@ -676,8 +749,9 @@ namespace ChronoRecorder
 
             if (process.ExitCode != 0)
             {
+                // The last lines say what went wrong; the first are the file's details.
                 string message = stderr.Result.Trim();
-                throw new Exception($"FFmpeg failed with exit code {process.ExitCode}: {(message.Length > 300 ? message.Substring(0, 300) : message)}");
+                throw new Exception($"FFmpeg failed with exit code {process.ExitCode}: {(message.Length > 300 ? message.Substring(message.Length - 300) : message)}");
             }
         }
 
@@ -735,6 +809,11 @@ namespace ChronoRecorder
         /// </summary>
         private void CheckActiveApplication(object? state)
         {
+            // A tick can outlast its second: stopping a recording waits for FFmpeg to close its file. The timer would
+            // start the next tick anyway, and two of them together could stop one recording and start another out of
+            // order. One at a time, and a skipped tick costs nothing since the next is a second away.
+            if (System.Threading.Interlocked.Exchange(ref monitorBusy, 1) == 1) return;
+
             try
             {
                 string activeApp = WindowDetector.GetActiveApplicationName();
@@ -752,6 +831,10 @@ namespace ChronoRecorder
             catch (Exception ex)
             {
                 Console.WriteLine($"⚠ Error in monitor: {ex.Message}");
+            }
+            finally
+            {
+                System.Threading.Volatile.Write(ref monitorBusy, 0);
             }
         }
 
@@ -869,47 +952,32 @@ namespace ChronoRecorder
         /// </summary>
         public static List<string> GetRunningApplications()
         {
-            var apps = new HashSet<string>();
-            
+            // The Recording page asks for this every three seconds while it is open, so it walks the desktop's
+            // windows once and then names only those few programs. Asking every process on the PC for its main
+            // window instead (the old way) made Windows walk that list again for each of some 300 processes.
+            var apps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             try
             {
-                Console.WriteLine("Getting running applications...");
-                var processes = System.Diagnostics.Process.GetProcesses();
-                Console.WriteLine($"Found {processes.Length} total processes");
-                
-                foreach (var process in processes)
+                foreach (var (pid, _) in ProcessScanner.ProgramWindows(includeMinimized: true))
                 {
                     try
                     {
-                        // Only include processes with windows
-                        if (process.MainWindowHandle != IntPtr.Zero)
-                        {
-                            string name = process.ProcessName;
-                            
-                            // Skip system processes
-                            if (!IsSystemProcess(name))
-                            {
-                                // Clean up name
-                                name = WindowDetector.CleanApplicationName(name);
-                                apps.Add(name);
-                                Console.WriteLine($"  Added: {name}");
-                            }
-                        }
+                        using var process = Process.GetProcessById(pid);
+                        if (IsSystemProcess(process.ProcessName)) continue;
+                        apps.Add(WindowDetector.CleanApplicationName(process.ProcessName));
                     }
-                    catch (Exception ex)
+                    catch
                     {
-                        // Some processes can't be accessed
-                        Console.WriteLine($"  Skipped process: {ex.Message}");
+                        // Gone already, or not ours to inspect.
                     }
                 }
-                
-                Console.WriteLine($"✓ Returning {apps.Count} applications");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"⚠ Error getting running apps: {ex.Message}");
             }
-            
+
             return apps.OrderBy(a => a).ToList();
         }
 

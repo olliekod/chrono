@@ -76,7 +76,11 @@ namespace ChronoRecorder
             string clipId = (string?)created["id"] ?? "";
             long partSize = (long?)created["partSize"] ?? 0;
             string link = (string?)created["link"] ?? "";
-            if (clipId.Length == 0 || partSize < 1 || link.Length == 0)
+
+            // The part size decides the size of the buffer held in memory, so take it from the server only within
+            // reason: a wrong number there should fail the upload, not ask Windows for gigabytes.
+            const long MaxPartSize = 256L * 1024 * 1024;
+            if (clipId.Length == 0 || partSize < 1 || partSize > MaxPartSize || link.Length == 0)
                 throw new UploadException("The server sent an unexpected reply. Check the server address in Settings.");
 
             // 2. Send the parts, one at a time.

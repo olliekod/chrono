@@ -6,6 +6,16 @@ namespace ChronoRecorder
     /// FFmpeg encoder flags per encoder. Presets are encoder-specific: an NVENC preset
     /// like "p4" makes the AMD/Intel/software encoders fail outright.
     /// </summary>
+    /// <summary>What the encoder is being asked to do, which is what its speed setting should follow.</summary>
+    public enum EncodeSpeed
+    {
+        /// <summary>Recording a game. Speed is everything: the encoder must never hold the game up.</summary>
+        Live,
+
+        /// <summary>Saving or trimming a clip that is already recorded. A few more seconds here buys a better picture.</summary>
+        Save
+    }
+
     public static class EncoderProfile
     {
         /// <summary>Time between keyframes in recorded segments; also how far a copy-mode clip start can snap.</summary>
@@ -24,19 +34,24 @@ namespace ChronoRecorder
             return "libx264";
         }
 
-        public static string BuildArgs(string? encoder, int bitrateKbps, int fps)
+        public static string BuildArgs(string? encoder, int bitrateKbps, int fps, EncodeSpeed speed = EncodeSpeed.Live)
         {
             string name = Normalize(encoder);
 
             // NVENC: variable bitrate with the high-quality tuning and adaptive quantisation, which spends bits on
             // flat areas (sky, walls) where blocking is most visible, and the High profile. All of it runs on the
             // encoder chip, not the game's GPU cores. The rate cap sits above the target so busy moments get room.
+            //
+            // The processor encoder is the one that changes with the job. While recording it has to be ultrafast, or
+            // a game stutters; ultrafast also turns off most of what x264 does to save bits, so the same bitrate
+            // gives a visibly worse picture. Saving a clip is not racing anything, so it gets a slower setting and a
+            // cleaner result from the same bitrate.
             string tuning = name switch
             {
                 "h264_nvenc" => "-preset p4 -tune hq -rc vbr -spatial-aq 1 -profile:v high",
-                "h264_amf" => "-quality speed",
-                "h264_qsv" => "-preset veryfast",
-                _ => "-preset ultrafast"
+                "h264_amf" => speed == EncodeSpeed.Save ? "-quality balanced" : "-quality speed",
+                "h264_qsv" => speed == EncodeSpeed.Save ? "-preset faster" : "-preset veryfast",
+                _ => speed == EncodeSpeed.Save ? "-preset veryfast" : "-preset ultrafast"
             };
 
             // Copy-mode clips can only start on a keyframe, so keyframes come every KeyframeIntervalSeconds

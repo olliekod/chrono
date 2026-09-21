@@ -127,6 +127,14 @@ namespace ChronoRecorder
                     TryDelete(temp);
                     (ok, error) = FfmpegRunner.Run(ClipMediaCommands.Trim(new ClipMediaCommands.TrimRequest(source, temp, start, end, encoder, bitrate, config.Fps, false)));
                 }
+                if (!ok && EncoderProfile.Normalize(encoder) != "libx264")
+                {
+                    // The graphics card refused the job twice, so it is the encoder rather than the decoder.
+                    // The processor can always do it, and losing someone's edit is worse than a slow trim.
+                    Console.WriteLine($"The {encoder} encoder couldn't trim this clip ({error}); using the processor");
+                    TryDelete(temp);
+                    (ok, error) = FfmpegRunner.Run(ClipMediaCommands.Trim(new ClipMediaCommands.TrimRequest(source, temp, start, end, "libx264", bitrate, config.Fps, false)));
+                }
                 if (!ok)
                 {
                     TryDelete(temp);

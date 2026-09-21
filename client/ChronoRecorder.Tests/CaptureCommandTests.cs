@@ -313,9 +313,22 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
-        public void WithoutAudio_NothingChanges()
+        public void WithoutAudio_FramesAreStillStampedByTheClock()
         {
+            // A recording with the sound turned off is still measured in real seconds. Frames only arrive when the
+            // window draws, so without the clock a game sitting on a still screen, or minimized, would take up less
+            // of the recording than the time it actually spent there: "the last 30 seconds" would reach much
+            // further back, and the frozen last frame of a minimized game would be skipped instead of held.
             string args = CaptureCommand.Build(Request("h264_nvenc", Dda()) with { ClockStartUnixSeconds = T0 });
+
+            Assert.Contains($"setpts=(time(0)-{T0:F3})/TB", args);
+            Assert.Contains("-fps_mode cfr -r 60", args);
+        }
+
+        [Fact]
+        public void WithoutTheClock_TheCommandIsPlain()
+        {
+            string args = CaptureCommand.Build(Request("h264_nvenc", Dda()));
 
             Assert.DoesNotContain("setpts", args);
             Assert.DoesNotContain("-fps_mode", args);

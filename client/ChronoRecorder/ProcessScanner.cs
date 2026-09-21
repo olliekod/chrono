@@ -24,6 +24,7 @@ namespace ChronoRecorder
 
         [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
@@ -104,8 +105,15 @@ namespace ChronoRecorder
         public IntPtr WindowFor(int pid)
             => ProgramWindows().Where(w => w.Pid == pid).Select(w => w.Window).FirstOrDefault();
 
-        /// <summary>The program's biggest visible window for each program that has one.</summary>
-        private static List<(int Pid, IntPtr Window)> ProgramWindows()
+        /// <summary>
+        /// The program's biggest visible window for each program that has one, found in a single pass over the
+        /// desktop. This is the cheap way to answer "what has a window": asking every process for its main window
+        /// makes Windows walk the whole window list once per process.
+        /// </summary>
+        /// <param name="includeMinimized">Also list programs whose only window is minimized. Game detection leaves
+        /// them out (a minimized window says nothing about what is on screen); the list of apps to choose from keeps
+        /// them, so a game you alt-tabbed out of doesn't vanish from it.</param>
+        public static List<(int Pid, IntPtr Window)> ProgramWindows(bool includeMinimized = false)
         {
             var best = new Dictionary<int, (IntPtr Window, long Area)>();
 
@@ -116,8 +124,12 @@ namespace ChronoRecorder
                 if (DwmGetWindowAttribute(hWnd, DwmwaCloaked, out int cloaked, sizeof(int)) == 0 && cloaked != 0) return true;   // hidden UWP shells
                 if (!GetWindowRect(hWnd, out var r)) return true;
 
-                long area = (long)(r.Right - r.Left) * (r.Bottom - r.Top);
-                if (area < 200 * 200) return true;   // tooltips, tray helpers
+                // A minimized window sits far off-screen at a token size, so it never wins on area.
+                bool minimized = IsIconic(hWnd);
+                if (minimized && !includeMinimized) return true;
+
+                long area = minimized ? 0 : (long)(r.Right - r.Left) * (r.Bottom - r.Top);
+                if (!minimized && area < 200 * 200) return true;   // tooltips, tray helpers
 
                 GetWindowThreadProcessId(hWnd, out uint pid);
                 if (pid == 0 || pid == Environment.ProcessId) return true;
@@ -243,8 +255,14 @@ namespace ChronoRecorder
             {
                 Console.WriteLine($"⚠ Couldn't read Windows' game list: {ex.Message}");
             }
-            windowsGameList = list;
-            cache.Clear();   // "known" may have changed for programs seen before
+            // Only throw away what was learned about running programs if the list really changed. Re-reading it
+            // otherwise would mean opening every windowed program again, and reading a game's loaded libraries,
+            // every half minute for nothing.
+            if (!windowsGameList.SetEquals(list))
+            {
+                windowsGameList = list;
+                cache.Clear();   // "known" may have changed for programs seen before
+            }
         }
 
         private static string Normalize(string path) => path.Replace('/', '\\').Trim().ToLowerInvariant();

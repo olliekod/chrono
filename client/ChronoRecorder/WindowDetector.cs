@@ -31,25 +31,19 @@ namespace ChronoRecorder
         {
             if (string.IsNullOrWhiteSpace(selected)) return IntPtr.Zero;
 
-            var processes = Process.GetProcesses();
-            try
+            // Checked every second while Application mode waits for its game, so it walks the desktop's windows once
+            // and names only the programs that have one, rather than asking all ~300 processes for a main window.
+            foreach (var (pid, window) in ProcessScanner.ProgramWindows(includeMinimized: true))
             {
-                foreach (var process in processes)
+                try
                 {
-                    try
-                    {
-                        if (!NameMatches(process.ProcessName, selected)) continue;
-                        if (process.MainWindowHandle != IntPtr.Zero) return process.MainWindowHandle;
-                    }
-                    catch
-                    {
-                        // Some processes can't be inspected (they belong to another user or just exited).
-                    }
+                    using var process = Process.GetProcessById(pid);
+                    if (NameMatches(process.ProcessName, selected)) return window;
                 }
-            }
-            finally
-            {
-                foreach (var process in processes) process.Dispose();
+                catch
+                {
+                    // Gone already, or not ours to inspect.
+                }
             }
 
             return IntPtr.Zero;

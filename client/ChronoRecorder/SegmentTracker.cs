@@ -31,7 +31,27 @@ namespace ChronoRecorder
             this.probe = probe;
         }
 
-        public static string NewRunId() => DateTime.Now.ToString("yyyyMMddHHmmss");
+        private static readonly object runIdGate = new object();
+        private static DateTime lastRunStamp = DateTime.MinValue;
+
+        /// <summary>
+        /// An id for a recording run, which also orders its files. Two runs must never share one: the segment muxer
+        /// numbers each run's files from zero, so a shared id would have the new run overwrite the old run's files and
+        /// let a clip mix footage from both. A restart in the same second is normal (a game switch, or the GDI
+        /// fallback starting straight after Desktop Duplication fails), so a repeated stamp is pushed a second on.
+        /// </summary>
+        public static string NewRunId()
+        {
+            lock (runIdGate)
+            {
+                var stamp = DateTime.Now;
+                // Seconds are the resolution of the id, so compare at that resolution.
+                stamp = new DateTime(stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second, stamp.Kind);
+                if (stamp <= lastRunStamp) stamp = lastRunStamp.AddSeconds(1);
+                lastRunStamp = stamp;
+                return stamp.ToString("yyyyMMddHHmmss");
+            }
+        }
 
         /// <summary>The output pattern to hand to FFmpeg's segment muxer.</summary>
         public static string NamePattern(string folder, string run) => Path.Combine(folder, $"segment_{run}_%05d.ts");
@@ -60,6 +80,7 @@ namespace ChronoRecorder
         {
             var files = ListFiles();
             string? livePath = null;
+            string? liveRun = null;
 
             if (recording && files.Count > 0)
             {
@@ -67,17 +88,23 @@ namespace ChronoRecorder
                 if (currentRun == null || newest.Run == currentRun)
                 {
                     livePath = newest.Path;
+                    liveRun = newest.Run;
                     files.RemoveAt(files.Count - 1);
                 }
             }
 
+            // The run being recorded right now. Its files, the live one aside, were all closed on a boundary.
+            string? activeRun = recording ? currentRun ?? liveRun : null;
+
             var finished = new List<SegmentSpan>(files.Count);
             for (int i = 0; i < files.Count; i++)
             {
-                // Every file but a run's last was closed on a boundary, so it's the nominal length.
-                // A run's last file was cut short whenever recording stopped, so it has to be measured.
+                // Every file but a run's last was closed on a boundary, so it's the nominal length. A run's last file
+                // was cut short when that recording stopped, so it has to be measured, which costs an FFmpeg run.
+                // The current run's last finished file needs none of that: the live file follows it, so it is whole.
                 bool lastOfRun = i == files.Count - 1 || files[i + 1].Run != files[i].Run;
-                finished.Add(new SegmentSpan(files[i].Path, lastOfRun ? Measure(files[i].Path) : nominalSeconds));
+                bool runEnded = files[i].Run != activeRun;
+                finished.Add(new SegmentSpan(files[i].Path, lastOfRun && runEnded ? Measure(files[i].Path) : nominalSeconds));
             }
 
             return new SegmentScan(finished, livePath);
@@ -85,11 +112,18 @@ namespace ChronoRecorder
 
         private double Measure(string path)
         {
-            if (!measured.TryGetValue(path, out double? seconds))
+            // Scan runs on the hotkey, the UI and the prune timer at once, so the cache needs guarding. The probe
+            // itself stays outside the lock: it spawns FFmpeg, and holding a lock across that would stall a save.
+            bool known;
+            double? seconds;
+            lock (measured) known = measured.TryGetValue(path, out seconds);
+
+            if (!known)
             {
                 seconds = probe(path);
-                measured[path] = seconds;
+                lock (measured) measured[path] = seconds;
             }
+
             return seconds is > 0 ? seconds.Value : nominalSeconds;
         }
 
@@ -107,7 +141,7 @@ namespace ChronoRecorder
                 try
                 {
                     File.Delete(segment.Path);
-                    measured.Remove(segment.Path);
+                    lock (measured) measured.Remove(segment.Path);
                     total -= segment.DurationSeconds;
                     deleted++;
                 }
