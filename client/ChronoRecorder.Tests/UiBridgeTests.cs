@@ -141,7 +141,7 @@ namespace ChronoRecorder.Tests
         public void PlainWordsForQualityAndSound()
         {
             Assert.Equal("1080p60", StatusPresenter.ClipQualityText("1920x1080", 60));
-            Assert.Equal("Original size, 60 FPS", StatusPresenter.ClipQualityText("native", 60));
+            Assert.Equal("Native, 60 FPS", StatusPresenter.ClipQualityText("native", 60));
             Assert.Equal("Game sound and microphone", StatusPresenter.AudioText(true, true));
             Assert.Equal("Game sound", StatusPresenter.AudioText(true, false));
             Assert.Equal("Microphone only", StatusPresenter.AudioText(false, true));
@@ -336,6 +336,30 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public async Task ChangingHowGamesAreCaptured_RestartsTheRecording()
+        {
+            var sent = JObject.FromObject(config);
+            sent["GameCapture"] = "monitor";
+
+            var data = await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal("monitor", config.GameCapture);
+            Assert.Equal(1, recorder.AudioRestarts);
+            Assert.True((bool?)data["captureRestarted"]);
+            Assert.False((bool?)data["soundRestarted"]);
+        }
+
+        [Fact]
+        public async Task AnUnknownCaptureMethod_IsRefused()
+        {
+            var sent = JObject.FromObject(config);
+            sent["GameCapture"] = "screenshot-everything";
+
+            Assert.Contains("capture games", await Fails("saveSettings", new { config = sent }));
+            Assert.Equal("window", config.GameCapture);
+        }
+
+        [Fact]
         public async Task ChangingSomethingUnrelated_DoesNotInterruptTheRecording()
         {
             var sent = JObject.FromObject(config);
@@ -452,7 +476,7 @@ namespace ChronoRecorder.Tests
             public void SetRecordingMode(RecorderConfig.RecordingMode mode) => Mode = mode;
             public void SetTrackedApplication(string appName) => Tracked = appName;
             public int AudioRestarts;
-            public void ApplyAudioSettings() => AudioRestarts++;
+            public void RestartRecording() => AudioRestarts++;
             public IReadOnlyList<string> RunningApplications() => new[] { "Discord", "Risk of rain 2" };
         }
 

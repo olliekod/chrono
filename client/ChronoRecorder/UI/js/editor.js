@@ -42,7 +42,18 @@
     const playBtn = h('button', { class: 'icon-btn', 'aria-label': 'Play', title: 'Play or pause (space)', onClick: togglePlay }, icon('play'));
     const timeText = h('span', { class: 'time', text: '0:00.0 / 0:00.0' });
     const fullscreenBtn = h('button', { class: 'icon-btn', 'aria-label': 'Full screen', title: 'Full screen (F). Esc to leave.', onClick: toggleFullscreen }, icon('expand'));
-    const muteBtn = h('button', { class: 'icon-btn', 'aria-label': 'Mute', onClick: () => { video.muted = !video.muted; paintMute(); } }, icon('volume'));
+    // Playback volume, remembered between clips (per viewer, so it is fine if the browser won't store it).
+    const readVolume = () => { try { const v = parseFloat(root.localStorage.getItem('chrono.volume')); return isFinite(v) ? Chrono.clamp(v, 0, 1) : 1; } catch { return 1; } };
+    const saveVolume = (v) => { try { root.localStorage.setItem('chrono.volume', String(v)); } catch { /* not remembered */ } };
+    let lastVolume = readVolume() || 1;
+    video.volume = readVolume();
+
+    const volumeSlider = h('input', { type: 'range', min: 0, max: 100, step: 1, class: 'slider volume', 'aria-label': 'Volume' });
+    const volumeText = h('span', { class: 'volume-text' });
+    const muteBtn = h('button', { class: 'icon-btn', 'aria-label': 'Mute', onClick: () => {
+      if (video.muted || video.volume === 0) { video.muted = false; video.volume = lastVolume; } else { lastVolume = video.volume; video.muted = true; }
+      paintMute();
+    } }, icon('volume'));
 
     const strip = h('div', { class: 'strip' });
     const dimLeft = h('div', { class: 'dim left' });
@@ -75,7 +86,7 @@
         h('div', { class: 'title-field' }, h('label', { for: 'clip-title', text: 'Title' }), titleInput, savedMark), closeBtn),
       h('div', { class: 'modal-body' },
         player,
-        h('div', { class: 'controls' }, playBtn, timeText, h('span', { class: 'spacer' }), muteBtn, fullscreenBtn),
+        h('div', { class: 'controls' }, playBtn, timeText, h('span', { class: 'spacer' }), muteBtn, volumeSlider, volumeText, fullscreenBtn),
         timeline, readout, infoRow, linkHost),
       h('div', { class: 'modal-foot' }, deleteHost, showBtn, h('span', { class: 'spacer' }), saveCopyBtn, saveTrimBtn, mainHost));
 
@@ -84,9 +95,24 @@
 
     // ---------------------------------------------------------------- painting
     function paintMute() {
-      muteBtn.replaceChildren(icon(video.muted ? 'mute' : 'volume'));
-      muteBtn.setAttribute('aria-label', video.muted ? 'Unmute' : 'Mute');
+      const silent = video.muted || video.volume === 0;
+      muteBtn.replaceChildren(icon(silent ? 'mute' : 'volume'));
+      muteBtn.setAttribute('aria-label', silent ? 'Unmute' : 'Mute');
+      const percent = silent ? 0 : Math.round(video.volume * 100);
+      volumeSlider.value = percent;
+      volumeSlider.style.setProperty('--fill', `${percent}%`);
+      volumeText.textContent = `${percent}%`;
     }
+
+    volumeSlider.addEventListener('input', () => {
+      const v = parseInt(volumeSlider.value, 10) / 100;
+      video.muted = v === 0;
+      video.volume = v;
+      if (v > 0) lastVolume = v;
+      saveVolume(v);
+      paintMute();
+    });
+    video.addEventListener('volumechange', paintMute);
 
     function paintPlay() {
       const playing = !video.paused && !video.ended;

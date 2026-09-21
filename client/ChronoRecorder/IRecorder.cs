@@ -21,8 +21,8 @@ namespace ChronoRecorder
         void SetRecordingMode(RecorderConfig.RecordingMode mode);
         void SetTrackedApplication(string appName);
 
-        /// <summary>Sound devices or volume changed: restart the recording so it uses them.</summary>
-        void ApplyAudioSettings();
+        /// <summary>Sound devices, volume or the capture method changed: restart the recording so it uses them.</summary>
+        void RestartRecording();
 
         /// <summary>Names of programs with a window, for the "Pick a game" list.</summary>
         IReadOnlyList<string> RunningApplications();

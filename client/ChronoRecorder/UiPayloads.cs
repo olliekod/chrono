@@ -56,7 +56,7 @@ namespace ChronoRecorder
         public static string ClipQualityText(string? resolution, int fps)
         {
             string label = CaptureSizing.QualityLabel(resolution, fps);
-            return label.StartsWith("Native", StringComparison.Ordinal) ? $"Original size, {fps} FPS" : label;
+            return label.StartsWith("Native", StringComparison.Ordinal) ? $"Native, {fps} FPS" : label;
         }
 
         public static string AudioText(bool game, bool microphone) => (game, microphone) switch

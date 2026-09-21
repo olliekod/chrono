@@ -60,6 +60,21 @@ namespace ChronoRecorder
         /// </summary>
         public static IntPtr GetForegroundWindowHandle() => GetForegroundWindow();
 
+        /// <summary>The id of the process that owns a window, or 0.</summary>
+        public static uint ProcessIdOf(IntPtr window)
+        {
+            if (window == IntPtr.Zero) return 0;
+            GetWindowThreadProcessId(window, out uint pid);
+            return pid;
+        }
+
+        /// <summary>The name of a running process ("Deadlock" style, before cleaning), or "" if it can't be read.</summary>
+        public static string ProcessNameOf(uint pid)
+        {
+            try { using var p = Process.GetProcessById((int)pid); return p.ProcessName; }
+            catch { return ""; }
+        }
+
         /// <summary>
         /// Get the name of the currently active application
         /// </summary>

@@ -336,13 +336,15 @@ namespace ChronoRecorder
                 || incoming.SpeakerDeviceId != config.SpeakerDeviceId || incoming.MicrophoneDeviceId != config.MicrophoneDeviceId
                 || incoming.MicrophoneVolumePercent != config.MicrophoneVolumePercent;
 
+            bool captureChanged = !string.Equals(incoming.GameCapture, config.GameCapture, StringComparison.OrdinalIgnoreCase);
+
             // Edit the live config in place: the recorder and hotkeys hold this same instance.
             config.CopyFrom(incoming);
             saveConfig(config);
             var refused = onConfigSaved();   // hotkeys Windows wouldn't register: another program already uses those keys
-            if (soundChanged) recorder.ApplyAudioSettings();   // new devices and volume start with a fresh recording
+            if (soundChanged || captureChanged) recorder.RestartRecording();   // new devices, volume or capture method start with a fresh recording
             PushStatus();
-            return Task.FromResult<object?>(new { config = JObject.FromObject(config), hotkeyProblems = refused, soundRestarted = soundChanged });
+            return Task.FromResult<object?>(new { config = JObject.FromObject(config), hotkeyProblems = refused, soundRestarted = soundChanged, captureRestarted = captureChanged });
         }
     }
 }

@@ -73,6 +73,60 @@ namespace ChronoRecorder.Tests
             Assert.DoesNotContain("-vf", args);
         }
 
+        // ---------------------------------------------------------------- window capture (games)
+
+        private static CaptureSource Window(long hwnd = 4521098, int w = 2560, int h = 1440)
+            => new(CaptureMethod.WindowCapture, 0, new Rectangle(0, 0, w, h), hwnd);
+
+        [Fact]
+        public void AGameIsCapturedAsItsOwnWindow_OnTheGpu_AtTheMonitorsSize()
+        {
+            string args = CaptureCommand.Build(Request("h264_nvenc", Window()));
+
+            Assert.Contains("-f lavfi -i \"gfxcapture=hwnd=4521098:max_framerate=60:width=2560:height=1440:resize_mode=scale_aspect:capture_cursor=true\"", args);
+            Assert.DoesNotContain("ddagrab", args);
+            Assert.DoesNotContain("gdigrab", args);
+            Assert.DoesNotContain("-vf", args);          // frames stay on the GPU
+            Assert.DoesNotContain("-pix_fmt", args);
+        }
+
+        [Fact]
+        public void TheWindowCaptureFollowsTheFrameRate()
+        {
+            Assert.Contains("max_framerate=144", CaptureCommand.Build(Request("h264_nvenc", Window(), fps: 144)));
+        }
+
+        [Fact]
+        public void TheVideoSizeIsForcedEven_SoItIsAlwaysEncodable()
+        {
+            Assert.Contains("width=1918:height=1078", CaptureCommand.Build(Request("h264_nvenc", Window(w: 1919, h: 1079))));
+        }
+
+        [Fact]
+        public void SoftwareEncodingAWindow_BringsTheFrameToSystemMemory()
+        {
+            string args = CaptureCommand.Build(Request("libx264", Window()));
+
+            Assert.Contains("-vf \"hwdownload,format=bgra,format=yuv420p\"", args);
+        }
+
+        [Fact]
+        public void AWindowCaptureWithoutAWindow_IsRefused_NotTurnedIntoAScreenCapture()
+        {
+            var noWindow = new CaptureSource(CaptureMethod.WindowCapture, 0, new Rectangle(0, 0, 2560, 1440), 0);
+
+            Assert.Throws<ArgumentException>(() => CaptureCommand.Build(Request("h264_nvenc", noWindow)));
+        }
+
+        [Fact]
+        public void AGameWindowWithSound_IsStampedByTheSameClock()
+        {
+            string args = CaptureCommand.Build(Synced(Window()));
+
+            Assert.Contains(ClockFilter, args);
+            Assert.Contains("-fps_mode cfr -r 60", args);   // a minimized game sends no frames: cfr repeats its last one
+        }
+
         // ---------------------------------------------------------------- audio
 
         private static AudioInput Pipe(string name = "a", int rate = 48000, int channels = 2, AudioSampleFormat format = AudioSampleFormat.Float32)

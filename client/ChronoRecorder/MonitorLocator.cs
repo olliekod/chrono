@@ -141,6 +141,10 @@ namespace ChronoRecorder
     /// <summary>Decides how to capture a monitor.</summary>
     public static class CaptureSourceChooser
     {
+        /// <summary>Capture one window (a game), made at the size of the monitor it is on.</summary>
+        public static CaptureSource ForWindow(IntPtr window, MonitorInfo? monitor, Rectangle primaryBounds)
+            => new CaptureSource(CaptureMethod.WindowCapture, monitor?.OutputIndex ?? 0, monitor?.Bounds ?? primaryBounds, window.ToInt64());
+
         public static CaptureSource Choose(MonitorInfo? monitor, Rectangle primaryBounds)
         {
             if (monitor == null)

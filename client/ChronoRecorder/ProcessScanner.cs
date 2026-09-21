@@ -90,6 +90,16 @@ namespace ChronoRecorder
             catch { return false; }
         }
 
+        /// <summary>
+        /// The program's main window even while it is minimized (which the visible-window scan skips), or Zero.
+        /// A minimized game must still be capturable as a window: that is what keeps the desktop out of the clip.
+        /// </summary>
+        public IntPtr MainWindowOf(int pid)
+        {
+            try { using var p = Process.GetProcessById(pid); return p.MainWindowHandle; }
+            catch { return IntPtr.Zero; }
+        }
+
         /// <summary>The program's window now (it may have been recreated since it was found), or Zero.</summary>
         public IntPtr WindowFor(int pid)
             => ProgramWindows().Where(w => w.Pid == pid).Select(w => w.Window).FirstOrDefault();

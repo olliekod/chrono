@@ -12,13 +12,22 @@ namespace ChronoRecorder
         DesktopDuplication,
 
         /// <summary>GDI screen grab of a region: CPU-bound and much heavier, kept as a fallback.</summary>
-        Gdi
+        Gdi,
+
+        /// <summary>
+        /// Windows Graphics Capture of one window (FFmpeg's gfxcapture): only that window's own picture, so another
+        /// window on top of it, or the desktop showing when it is minimized, can never end up in the clip. Frames stay
+        /// on the GPU like Desktop Duplication (measured 2.9% of a core against 2.4%). Used for games.
+        /// </summary>
+        WindowCapture
     }
 
-    /// <summary>What to record: one monitor.</summary>
+    /// <summary>What to record: one monitor, or (WindowCapture) one window shown at a monitor's size.</summary>
     /// <param name="OutputIndex">Desktop Duplication's number for the monitor (on the default GPU).</param>
-    /// <param name="Bounds">The monitor's rectangle on the virtual desktop, in pixels.</param>
-    public sealed record CaptureSource(CaptureMethod Method, int OutputIndex, Rectangle Bounds);
+    /// <param name="Bounds">The monitor's rectangle on the virtual desktop, in pixels. For a window capture this is the
+    /// size the video is made at; the window is scaled to fit it (keeping its shape).</param>
+    /// <param name="WindowHandle">The HWND to capture. Only used by WindowCapture.</param>
+    public sealed record CaptureSource(CaptureMethod Method, int OutputIndex, Rectangle Bounds, long WindowHandle = 0);
 
     /// <param name="Audio">Sound sources, each read from a named pipe. Empty or null for a silent recording.</param>
     /// <param name="ClockStartUnixSeconds">The start time (T0) that picture and sound are both measured from.
@@ -55,7 +64,19 @@ namespace ChronoRecorder
 
             // ---- inputs. Every input goes first: ffmpeg treats an option placed before an -i as an input option
             // and refuses output-only ones (like -vf) there. Input 0 is the video; the audio pipes follow.
-            if (r.Source.Method == CaptureMethod.DesktopDuplication)
+            if (r.Source.Method == CaptureMethod.WindowCapture)
+            {
+                if (r.Source.WindowHandle == 0) throw new ArgumentException("A window capture needs a window.", nameof(r));
+
+                // The size is forced so a window that starts small (a launcher, a loading screen) or changes size later
+                // doesn't change the video's size; it is scaled to fit, keeping its shape. A minimized game stops sending
+                // frames, so the clock-stamped constant frame rate below repeats its last frame: a frozen picture of the
+                // game, never the desktop.
+                var b = r.Source.Bounds;
+                int w = b.Width - b.Width % 2, h = b.Height - b.Height % 2;
+                parts.Add($"-f lavfi -i \"gfxcapture=hwnd={r.Source.WindowHandle}:max_framerate={r.Fps}:width={w}:height={h}:resize_mode=scale_aspect:capture_cursor=true\"");
+            }
+            else if (r.Source.Method == CaptureMethod.DesktopDuplication)
             {
                 parts.Add($"-f lavfi -i \"ddagrab=output_idx={r.Source.OutputIndex}:framerate={r.Fps}\"");
             }
@@ -101,7 +122,7 @@ namespace ChronoRecorder
 
             // Desktop Duplication frames are GPU textures. A hardware encoder takes them as they are; software
             // encoding has to bring them to system memory first, which costs CPU.
-            if (r.Source.Method == CaptureMethod.DesktopDuplication && software)
+            if (r.Source.Method != CaptureMethod.Gdi && software)
                 videoFilters.Add("hwdownload,format=bgra,format=yuv420p");
 
             if (videoFilters.Count > 0)

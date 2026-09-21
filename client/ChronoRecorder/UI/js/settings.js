@@ -15,7 +15,7 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
+  const DEFAULTS = { GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
@@ -70,12 +70,16 @@
     return [
       h('h2', { text: 'Recording' }),
       field('Clip size', select(config.Resolution || '1920x1080', [
-        ['native', 'Original size (largest files)'], ['2560x1440', '1440p'], ['1920x1080', '1080p (recommended)'], ['1280x720', '720p (smallest files)'],
+        ['native', 'Native (largest files)'], ['2560x1440', '1440p'], ['1920x1080', '1080p (recommended)'], ['1280x720', '720p (smallest files)'],
       ], (v) => { config.Resolution = v; }),
-      'Clips are shrunk on your graphics card right after you save them, which takes a few seconds. The game itself is always recorded at full size, so this never slows it down.'),
+      'Native keeps your monitor\'s full resolution. Smaller sizes are made on your graphics card right after you save a clip, which takes a few seconds. The game itself is always recorded at full size, so this never slows it down.'),
       field('Frame rate', select(String(config.Fps || 60), [['30', '30 FPS'], ['60', '60 FPS'], ['120', '120 FPS'], ['144', '144 FPS']],
         (v) => { config.Fps = parseInt(v, 10); loadRecommended(); })),
       h('div', { class: 'field' }, h('label', { text: 'Video bitrate (kbps)' }), bitrate, hint),
+      field('Capture games as', select(config.GameCapture || 'window', [
+        ['window', "The game's own window (recommended)"], ['monitor', 'The whole monitor, only while the game is in front'],
+      ], (v) => { config.GameCapture = v; }),
+        "Recording the window means nothing else can ever end up in a clip: not Discord, not your desktop, even if you alt-tab or minimize the game. Only switch to the monitor if a game records as a black picture."),
       field('Encoder', select(config.Encoder || 'auto', [
         ['auto', 'Automatic (best for this PC)'], ['h264_nvenc', 'NVIDIA graphics card'], ['h264_amf', 'AMD graphics card'], ['h264_qsv', 'Intel graphics'], ['libx264', 'Processor (slow)'],
       ], (v) => { config.Encoder = v; }), 'Leave this on Automatic unless clips fail to save. Recording on your processor is much heavier on the game.'),
@@ -326,6 +330,7 @@
       saved = JSON.stringify(config);
       Chrono.toast('good', 'Settings saved');
       if (result.soundRestarted) Chrono.toast('good', 'Sound settings applied', 'The recording restarted with your new devices and volume.');
+      else if (result.captureRestarted) Chrono.toast('good', 'Capture setting applied', 'The recording restarted.');
       if (result.hotkeyProblems && result.hotkeyProblems.length) {
         Chrono.toast('warn', "A hotkey couldn't be set", `Another program already uses these keys: ${result.hotkeyProblems.join(', ')}. Pick different ones.`);
       }

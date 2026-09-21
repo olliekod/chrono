@@ -30,6 +30,8 @@ namespace ChronoRecorder
             c.SpeakerDeviceId = (c.SpeakerDeviceId ?? "").Trim();
             c.MicrophoneDeviceId = (c.MicrophoneDeviceId ?? "").Trim();
 
+            if (c.GameCapture != "window" && c.GameCapture != "monitor") return "Choose how to capture games from the list.";
+
             if (c.Fps < 24 || c.Fps > 240) return "The frame rate must be between 24 and 240.";
             if (c.Bitrate != 0 && (c.Bitrate < 1000 || c.Bitrate > 80000)) return "The bitrate must be between 1000 and 80000 kbps, or empty for the recommended one.";
             if (!Regex.IsMatch(c.Resolution ?? "", @"^(native|\d{3,5}x\d{3,5})$", RegexOptions.IgnoreCase)) return "Choose a clip size from the list.";

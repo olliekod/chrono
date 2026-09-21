@@ -38,6 +38,12 @@ namespace ChronoRecorder
 
         // Auto mode: the game found by the scanner, and when to look again.
         private readonly ProcessScanner scanner = new ProcessScanner();
+
+        // Games are captured as their own window. If that can't start for a game, the monitor is used instead, but only while
+        // the game is in front (see GameCapturePlanner); these track that.
+        private bool windowCaptureFailed;
+        private bool captureNeedsGameInFront;
+        private bool loggedWaiting;
         private RunningGame? autoGame;
         private DateTime nextGameScanUtc = DateTime.MinValue;
         private static readonly TimeSpan GameScanInterval = TimeSpan.FromSeconds(3);
@@ -110,7 +116,11 @@ namespace ChronoRecorder
 
                 try
                 {
-                    var source = CaptureSourceChooser.Choose(PickMonitor(), PrimaryBounds());
+                    var source = ChooseSource();
+                    if (source == null) return;   // nothing that is safe to record yet (the reason is logged once)
+
+                    loggedWaiting = false;
+                    Console.WriteLine($"▶️ STARTING RECORDING: {TargetName}");
                     LaunchFfmpeg(source);
                     Console.WriteLine("✓ Recording started");
                 }
@@ -126,6 +136,73 @@ namespace ChronoRecorder
                     Console.WriteLine($"✗ Failed to start recording: {ex.Message}");
                     RecordingFailed?.Invoke($"Couldn't start recording: {ex.Message}");
                 }
+            }
+        }
+
+        /// <summary>The game's window (even while minimized), or Zero when there is no game or its window isn't found.</summary>
+        private IntPtr ResolveGameWindow()
+        {
+            switch (config.Mode)
+            {
+                case RecorderConfig.RecordingMode.Application:
+                    return WindowDetector.FindApplicationWindow(config.SelectedApplication);
+                case RecorderConfig.RecordingMode.Auto when autoGame != null:
+                    var main = scanner.MainWindowOf(autoGame.Candidate.Pid);
+                    return main != IntPtr.Zero ? main : scanner.WindowFor(autoGame.Candidate.Pid);
+                default:
+                    return IntPtr.Zero;
+            }
+        }
+
+        /// <summary>Is the game the window you are looking at? Only matters when the monitor is what gets captured.</summary>
+        private bool GameInFront()
+        {
+            uint foreground = WindowDetector.ProcessIdOf(WindowDetector.GetForegroundWindowHandle());
+            if (foreground == 0) return false;
+
+            return config.Mode switch
+            {
+                RecorderConfig.RecordingMode.Auto => autoGame != null && foreground == (uint)autoGame.Candidate.Pid,
+                RecorderConfig.RecordingMode.Application => WindowDetector.NameMatches(WindowDetector.ProcessNameOf(foreground), config.SelectedApplication),
+                _ => true
+            };
+        }
+
+        /// <summary>
+        /// What to capture. Whole-screen mode records the monitor, as asked. A game is recorded as its own window, so nothing
+        /// else can end up in the clip, however it is covered or minimized; if that isn't possible the monitor is used only
+        /// while the game is in front; and if there is no window at all, nothing is recorded rather than something else.
+        /// </summary>
+        private CaptureSource? ChooseSource()
+        {
+            captureNeedsGameInFront = false;
+
+            if (config.Mode == RecorderConfig.RecordingMode.Display)
+                return CaptureSourceChooser.Choose(PickMonitor(), PrimaryBounds());
+
+            IntPtr window = ResolveGameWindow();
+            var plan = GameCapturePlanner.Plan(config.GameCapture, windowCaptureFailed, window != IntPtr.Zero);
+            var monitor = window == IntPtr.Zero ? null : MonitorLocator.ForWindow(window) ?? MonitorLocator.Primary();
+
+            switch (plan)
+            {
+                case GameCapturePlan.Window:
+                    return CaptureSourceChooser.ForWindow(window, monitor, PrimaryBounds());
+
+                case GameCapturePlan.MonitorWhenInFront:
+                    captureNeedsGameInFront = true;
+                    if (!GameInFront())
+                    {
+                        if (!loggedWaiting) Console.WriteLine($"Not recording {TargetName} until it is in front (screen capture is only used while it is)");
+                        loggedWaiting = true;
+                        return null;
+                    }
+                    return CaptureSourceChooser.Choose(monitor, PrimaryBounds());
+
+                default:
+                    if (!loggedWaiting) Console.WriteLine($"Not recording {TargetName}: its window wasn't found");
+                    loggedWaiting = true;
+                    return null;
             }
         }
 
@@ -347,6 +424,16 @@ namespace ChronoRecorder
 
                 try
                 {
+                    if (DateTime.UtcNow - started < StartupFailureWindow && source.Method == CaptureMethod.WindowCapture)
+                    {
+                        // This game can't be captured as a window. Never fall back to "the monitor, always": ChooseSource uses
+                        // the monitor only while the game is in front, and the next check (within a second) starts that.
+                        Console.WriteLine($"⚠ Window capture failed to start ({detail}). Using screen capture while the game is in front.");
+                        windowCaptureFailed = true;
+                        Warning?.Invoke($"Chrono couldn't capture {TargetName} directly, so it records the screen while the game is in front and pauses when it isn't.");
+                        return;
+                    }
+
                     if (DateTime.UtcNow - started < StartupFailureWindow && source.Method == CaptureMethod.DesktopDuplication)
                     {
                         // GPU capture never got going (another GPU, an unsupported setup...). GDI is heavier but works.
@@ -364,7 +451,9 @@ namespace ChronoRecorder
                     {
                         // It was working and then the capture dropped (a resolution change, a lock screen...).
                         Console.WriteLine($"⚠ Capture stopped ({detail}). Restarting.");
-                        LaunchFfmpeg(source);
+                        var again = RefreshedSource(source);
+                        if (again == null) { Console.WriteLine("The game's window is gone; waiting for it."); return; }
+                        LaunchFfmpeg(again);
                         return;
                     }
                 }
@@ -376,6 +465,14 @@ namespace ChronoRecorder
 
             Console.WriteLine($"✗ Recording stopped: {detail}");
             RecordingFailed?.Invoke($"Recording stopped unexpectedly ({detail}).");
+        }
+
+        /// <summary>A window capture needs the game's current window; a game can replace its window (loading screen to game).</summary>
+        private CaptureSource? RefreshedSource(CaptureSource source)
+        {
+            if (source.Method != CaptureMethod.WindowCapture) return source;
+            var window = ResolveGameWindow();
+            return window == IntPtr.Zero ? null : source with { WindowHandle = window.ToInt64() };
         }
 
         /// <summary>
@@ -399,11 +496,12 @@ namespace ChronoRecorder
         public IReadOnlyList<string> RunningApplications() => GetRunningApplications();
 
         /// <summary>
-        /// New sound settings only take effect when FFmpeg is started, so end the current recording; the monitor restarts it
-        /// within a second with the new devices and volume. (The last minutes of buffered footage are lost.)
+        /// Sound devices, microphone volume and the game-capture method only take effect when FFmpeg is started, so end
+        /// the current recording; the monitor restarts it within a second with the new settings. (The buffered footage is lost.)
         /// </summary>
-        public void ApplyAudioSettings()
+        public void RestartRecording()
         {
+            windowCaptureFailed = false;
             if (isRecording) StopRecording();
         }
 
@@ -675,6 +773,14 @@ namespace ChronoRecorder
 
             bool shouldRecord = RecordingPolicy.ShouldRecord(config.RecorderEnabled, config.Mode, config.SelectedApplication, gameRunning);
 
+            // Screen capture (a fallback for games) must never see anything but the game: pause the moment it isn't in front.
+            if (shouldRecord && isRecording && captureNeedsGameInFront && !GameInFront())
+            {
+                Console.WriteLine($"⏸️ {TargetName} isn't in front: pausing screen capture so nothing else is recorded");
+                StopRecording();
+                return;
+            }
+
             // A different game took over (the old one closed and another was found): record its monitor instead.
             if (shouldRecord && isRecording && config.Mode == RecorderConfig.RecordingMode.Auto && gameBefore != null && autoGame?.Candidate.Pid != gameBefore)
             {
@@ -684,8 +790,7 @@ namespace ChronoRecorder
             }
             else if (shouldRecord && !isRecording)
             {
-                Console.WriteLine($"▶️ STARTING RECORDING: {TargetName}");
-                StartRecording();
+                StartRecording();   // logs when it starts; does nothing (and says why, once) if there is nothing safe to record yet
             }
             else if (!shouldRecord && isRecording)
             {
@@ -719,6 +824,8 @@ namespace ChronoRecorder
             var games = scanner.FindGames();
             var chosen = GameClassifier.Choose(games.Select(g => g.Candidate).ToList(), currentPid: null);
             autoGame = games.FirstOrDefault(g => g.Candidate == chosen);
+            windowCaptureFailed = false;   // a different game may well work as a window
+            loggedWaiting = false;
             if (autoGame != null) Console.WriteLine($"Game found: {autoGame.Candidate.DisplayName} ({autoGame.Candidate.ProcessName})");
         }
 
@@ -741,6 +848,7 @@ namespace ChronoRecorder
         /// </summary>
         public void SetTrackedApplication(string appName)
         {
+            windowCaptureFailed = false;
             config.SelectedApplication = appName;
             ConfigManager.Save(config);
             Console.WriteLine($"Now tracking: {appName}");

@@ -84,6 +84,13 @@ namespace ChronoRecorder
         /// <summary>Also record the default microphone. Off by default: it is a privacy decision.</summary>
         public bool RecordMicrophone { get; set; } = false;
 
+        /// <summary>
+        /// How a game is captured. "window" (default): the game's own window, so nothing else can ever be in the clip.
+        /// "monitor": the whole monitor, and only while the game is in front (for the rare game that records black as a
+        /// window). Whole-screen mode always records the monitor.
+        /// </summary>
+        public string GameCapture { get; set; } = "window";
+
         /// <summary>Which speakers/headphones to record the game from (its Windows device id). Empty = Windows' default.</summary>
         public string SpeakerDeviceId { get; set; } = "";
 

@@ -40,7 +40,7 @@
     Username: 'Oliver', ApiUrl: 'https://chrono-clips.example.workers.dev', UploadKey: 'secret', Bitrate: 0, Fps: 60, Resolution: '1920x1080',
     Encoder: 'auto', Mode: 2, RecorderEnabled: true, SelectedApplication: '', OutputFolder: 'C:\\Users\\Oliver\\Videos\\Chrono',
     TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0,
-    SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
+    GameCapture: 'window', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
     FirstRunCompleted: true,
     Hotkeys: [
       { Name: 'Quick Clip', Key: 'PageUp', Modifiers: ['Control'], ClipLengthSeconds: 30 },
@@ -151,8 +151,9 @@
     getRecommendedBitrate: async ({ fps }) => ({ kbps: Math.round(2560 * 1440 * fps * 0.09 / 500000) * 500, size: '2560x1440', fps }),
     saveSettings: async ({ config: next }) => {
       const soundRestarted = ['RecordAudio', 'RecordMicrophone', 'SpeakerDeviceId', 'MicrophoneDeviceId', 'MicrophoneVolumePercent'].some((k) => next[k] !== config[k]);
+      const captureRestarted = next.GameCapture !== undefined && next.GameCapture !== config.GameCapture;
       Object.assign(config, next);
-      return { config: copy(config), hotkeyProblems: [], soundRestarted };
+      return { config: copy(config), hotkeyProblems: [], soundRestarted, captureRestarted };
     },
   };
 

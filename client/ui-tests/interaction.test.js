@@ -114,6 +114,14 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('the video has a full screen button', fullscreenAsked === 1);
   doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'f', bubbles: true }));
   check('F also goes full screen', fullscreenAsked === 2);
+  const volumeSlider = doc.querySelector('input.slider.volume');
+  check('the video has a volume slider showing where it is', !!volumeSlider && /%$/.test(doc.querySelector('.volume-text').textContent));
+  volumeSlider.value = '35'; volumeSlider.dispatchEvent(new window.Event('input', { bubbles: true }));
+  check('moving the slider sets the video volume and shows it', Math.abs(video.volume - 0.35) < 0.001 && doc.querySelector('.volume-text').textContent === '35%');
+  [...doc.querySelectorAll('.controls button')].find((b) => /Mute/.test(b.getAttribute('aria-label'))).click();
+  check('Mute takes the slider to zero, and unmuting puts it back', doc.querySelector('.volume-text').textContent === '0%');
+  [...doc.querySelectorAll('.controls button')].find((b) => /Unmute/.test(b.getAttribute('aria-label'))).click();
+  check('unmuting returns to the earlier volume', doc.querySelector('.volume-text').textContent === '35%');
   doc.querySelector('.player .click').dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
   check('double-clicking the video goes full screen too', fullscreenAsked === 3);
 
@@ -213,6 +221,23 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('Reset clears the bar and the change', !doc.querySelector('.unsaved') && doc.querySelector('input[type=number]').value === '');
 
   // ---- Sound
+  // ---- Recording settings: native wording and how games are captured
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /^Recording$/.test(b.textContent)).click();
+  const sizeOptions = [...doc.querySelector('.settings-body select').options].map((o) => o.text);
+  check('the clip size says Native, not Original size', sizeOptions.includes('Native (largest files)') && !sizeOptions.some((t) => /Original/.test(t)));
+  const captureSelect = doc.querySelector('select[aria-label="Capture games as"]') || [...doc.querySelectorAll('.settings-body select')].find((s) => /own window/.test(s.options[0].text));
+  check('games are captured as their own window by default', !!captureSelect && captureSelect.value === 'window' && /own window/.test(captureSelect.options[0].text));
+  check('the capture setting explains that nothing else can be in a clip', /nothing else can ever end up in a clip/i.test(doc.querySelector('.settings-body').textContent));
+  captureSelect.value = 'monitor'; captureSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+  await until(() => /Capture setting applied/.test(doc.querySelector('.toasts').textContent), 'capture applied toast');
+  check('changing the capture method restarts the recording and says so', true);
+  [...doc.querySelectorAll('.settings-body select')].find((s) => /own window/.test(s.options[0].text)).value = 'window';
+  const back = [...doc.querySelectorAll('.settings-body select')].find((s) => /own window/.test(s.options[0].text));
+  back.dispatchEvent(new window.Event('change', { bubbles: true }));
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+  await sleep(250);
+
   [...doc.querySelectorAll('.settings-nav button')].find((b) => /Sound/.test(b.textContent)).click();
   await until(() => doc.querySelector('select[aria-label="Microphone"]').options.length > 1, 'devices listed');
   const micSelect = doc.querySelector('select[aria-label="Microphone"]');
