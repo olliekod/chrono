@@ -2,15 +2,6 @@
 .DS_Store
 Thumbs.db
 
-# Backend
-backend/.env
-backend/venv/
-backend/.venv/
-backend/__pycache__/
-*.pyc
-*.db
-backend/test.mp4
-
 # Client (.NET)
 bin/
 obj/
@@ -33,3 +24,6 @@ client/ChronoRecorder/UI/dev/samples/
 
 # UI test dependencies
 client/ui-tests/node_modules/
+
+# Downloaded build tools (Inno Setup)
+.tools/

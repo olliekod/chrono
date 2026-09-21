@@ -287,7 +287,7 @@
   function appSection() {
     return [
       h('h2', { text: 'App' }),
-      toggle('Start Chrono with Windows', 'Chrono runs quietly in the tray and records games on its own. There is no overlay.', config.StartWithWindows !== false, (v) => { config.StartWithWindows = v; }),
+      toggle('Start Chrono with Windows', 'Chrono stays in the tray and records games on its own. It has no overlay.', config.StartWithWindows !== false, (v) => { config.StartWithWindows = v; }),
       toggle('Show notifications', 'A small message when a clip is saved or something needs your attention.', config.ShowNotifications !== false, (v) => { config.ShowNotifications = v; }),
       h('div', { class: 'field', style: { marginTop: '22px' } }, h('label', { text: 'Clips folder' }),
         h('div', { class: 'selectable', style: { marginBottom: '8px', overflowWrap: 'anywhere' }, text: config.OutputFolder }),

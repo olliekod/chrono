@@ -27,7 +27,7 @@ namespace ChronoRecorder
             Show(title, text, ToolTipIcon.Info);
         }
 
-        /// <summary>Failures are always shown. A clip that silently failed to upload is worse than a notification.</summary>
+        /// <summary>Failures are always shown. A clip that fails to upload with no notice is worse than a notification.</summary>
         public void Error(string title, string text) => Show(title, text, ToolTipIcon.Error);
 
         private void Show(string title, string text, ToolTipIcon kind)

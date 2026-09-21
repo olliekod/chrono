@@ -6,9 +6,8 @@ Notes for anyone working on the code in this repository.
 
 Chrono is a game-clip recorder in two independent halves that talk over HTTP:
 
-- `client/ChronoRecorder/` — Windows-only .NET 8 WinForms app. Runs a rolling FFmpeg buffer, saves the last N seconds on a global hotkey, uploads the clip, and puts a share link on the clipboard. Hosts a WebView2 UI.
-- `worker/` — the backend: a TypeScript Cloudflare Worker with an R2 bucket for video and a D1 database for metadata. It serves a `/watch/:id` page with the Open Graph tags Discord reads to embed the video.
-- `backend/` — the legacy FastAPI/Fly.io backend. Superseded by `worker/`; kept only until the Worker is deployed and confirmed, then to be deleted. Don't build on it.
+- `client/ChronoRecorder/` is a Windows-only .NET 8 WinForms app. It runs a rolling FFmpeg buffer, saves the last N seconds on a global hotkey, uploads the clip, and puts a share link on the clipboard. It hosts a WebView2 UI.
+- `worker/` is the server: a TypeScript Cloudflare Worker with an R2 bucket for video and a D1 database for metadata. It serves a `/watch/:id` page with the Open Graph tags Discord reads to embed the video.
 
 Both halves have tests (xUnit for the client, vitest for the Worker). There is no linter.
 
@@ -28,7 +27,7 @@ npx wrangler deploy
 - The production upload key is in `worker/.prod-upload-key` (git-ignored). Set or rotate it with `npx wrangler secret put UPLOAD_KEY < .prod-upload-key`, and paste the same value into the app's Settings.
 - Cloudflare's bot filter answers `403 error code: 1010` to clients with a default library user-agent (Python's urllib, for one). The app sends `Chrono/1.0`, which passes; give any script a User-Agent too.
 - Local secrets live in `worker/.dev.vars` (git-ignored; needs `UPLOAD_KEY`). In production set it with `npx wrangler secret put UPLOAD_KEY`; never pass secret values on the command line.
-- Use a non-default `--port` for `wrangler dev`: 8787 is often taken, and on Windows two listeners can share a port, so requests silently go to the wrong server.
+- Use a non-default `--port` for `wrangler dev`: 8787 is often taken, and on Windows two listeners can share a port, so requests can go to the wrong server with no error.
 - `worker/worker-configuration.d.ts` is generated (`wrangler types`) and git-ignored. Regenerate it after editing `wrangler.jsonc` or adding `src/index.ts`, or the test types break.
 
 Client (run from `client/ChronoRecorder/`):
@@ -40,6 +39,7 @@ dotnet test ../ChronoRecorder.Tests --filter "FullyQualifiedName~ClipPlannerTest
 ```
 - If Chrono is running, `dotnet build`/`dotnet test` fail with "file is locked by ChronoRecorder" because the running app holds `bin/Debug`. Add `-c Release` (a separate folder) instead of stopping the user's app.
 - FFmpeg: the app looks for `ffmpeg\ffmpeg.exe` next to itself first and falls back to `PATH` (`FfmpegLocator`). Run `powershell -File scripts\fetch-ffmpeg.ps1` once to download the build Chrono ships with (gyan.dev release-essentials, checksum-verified, git-ignored) into `client/ChronoRecorder/ffmpeg/`; the csproj copies it to the output. There is no `ffprobe` dependency: clip length and size come from parsing `ffmpeg -i` (`MediaInfoParser`). Also needs the Edge WebView2 runtime (`WebView2Runtime.EnsureInstalled` runs the bundled installer if it is missing).
+- Installer: `powershell -File scripts\build-installer.ps1` runs `publish.ps1`, downloads the Inno Setup compiler from NuGet into `.tools/` (git-ignored) and compiles `scripts/chrono.iss` into `dist\Chrono-Setup.exe`. It is per-user (`PrivilegesRequired=lowest`, `%LOCALAPPDATA%\Programs\Chrono`, Start menu entry, optional desktop shortcut). Install and uninstall stop the Chrono running from the install folder, the uninstaller removes the `Chrono` Run-key value and `%LOCALAPPDATA%\Chrono` (logs, thumbnails, WebView2 cache; a development build shares that folder), and it leaves clips, `config.json` and `library.json`. The version is `<Version>` in the csproj. Test it with `Chrono-Setup.exe /VERYSILENT /DIR=<folder>`, then `<folder>\unins000.exe /VERYSILENT`.
 - Distributing: `powershell -File scripts\publish.ps1` builds `dist\Chrono\` and `dist\Chrono-win-x64.zip` (~106 MB): self-contained (no .NET install needed), built as a WinExe (no console window), with FFmpeg and the WebView2 installer inside. Verified: it starts and finds its own FFmpeg with every ffmpeg folder removed from `PATH`, and recording plus copy/GPU/CPU exports work on the bundled FFmpeg 9.0.2 (sync +15 ms). The logo comes from one square PNG: `powershell -File scripts\make-icon.ps1 -Source <logo.png>` writes `Assets\chrono.ico` (16-256 px; the exe icon via `<ApplicationIcon>`), `Assets\logo-256.png` (embedded in the program; `TrayIcons` draws the tray icon from it and recolours the logo's red centre dot: red = recording, grey = waiting, amber = paused) and `UI\img\logo.png` (sidebar, greyed unless recording). At 16 px the arrowhead disappears but the ring and dot still read.
 - Tests cover `ClipPlanner`, `EncoderProfile`, `CaptureCommand`, `CaptureSizing`, `SegmentTracker`, `MonitorLocator`, `AudioFeeder`, `HotkeyParser`, config handling, `UploadRules` and `Uploader` (against a fake HTTP handler). Anything that spawns FFmpeg or needs a window is verified by hand, so keep new logic in small pure classes where you can.
 - It is an `Exe` that logs heavily with `Console.WriteLine`; run it from a terminal to see the log.
@@ -131,7 +131,3 @@ Why chunked uploads: Workers cap request bodies at 100 MB on the free plan and a
 - Local R2 (miniflare) returns ~170-character ETags and accepts a completion that lists only some parts. Real R2 uses short ETags, so keep the ETag length cap generous, and keep the explicit "all parts" check in `completeClip`.
 - The vitest package is `@cloudflare/vitest-plugin` (Vitest 4+), renamed from `@cloudflare/vitest-pool-workers`. Tests reach the Worker through `exports.default.fetch` and bindings through `env`, both from `cloudflare:workers`.
 - The vitest run prints a few `Can't read from request stream because client disconnected` lines for the wrong-size part tests. This is the in-process test runner; a real `wrangler dev` server logs only the intended warning.
-
-## Legacy backend (`backend/`)
-
-The FastAPI app. Known problems, which are why it was replaced: no volume on Fly so `clips.db` was on an ephemeral disk, `/watch` interpolated uploader-controlled text into HTML unescaped, uploads did not require a token, and the `Dockerfile`, `Procfile` and `fly.toml` disagreed on the port. Delete it once the Worker is live.

@@ -11,7 +11,7 @@ namespace ChronoRecorder
     /// <summary>Pure decisions about uploading: what counts as configured, and how to clean up user input.</summary>
     public static class UploadRules
     {
-        // The address this project used before it had a backend of its own. Nobody here owns it.
+        // A hostname from an early prototype that nobody here owns. Never send a key to it.
         private const string LegacyHost = "chrono-clips.fly.dev";
 
         /// <summary>The server only accepts 1-32 letters, digits, "_" and "-".</summary>
@@ -19,7 +19,7 @@ namespace ChronoRecorder
         {
             string cleaned = Regex.Replace((name ?? "").Trim(), "[^A-Za-z0-9_-]", "_");
             if (cleaned.Length > 32) cleaned = cleaned.Substring(0, 32);
-            return cleaned.Length == 0 ? "player" : cleaned;
+            return cleaned.Length == 0 ? "username" : cleaned;
         }
 
         /// <summary>

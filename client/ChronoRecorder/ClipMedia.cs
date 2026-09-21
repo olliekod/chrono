@@ -47,6 +47,7 @@ namespace ChronoRecorder
             string path = Path.Combine(ThumbsFolder, name);
             if (File.Exists(path)) return name;
 
+            Directory.CreateDirectory(ThumbsFolder);
             slots.Wait();
             try
             {
@@ -75,6 +76,7 @@ namespace ChronoRecorder
             string path = Path.Combine(ThumbsFolder, name);
             if (File.Exists(path)) return new Filmstrip(name, frames);
 
+            Directory.CreateDirectory(ThumbsFolder);
             slots.Wait();
             try
             {

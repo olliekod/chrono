@@ -14,7 +14,7 @@ namespace ChronoRecorder
 
     public class RecorderConfig
     {
-        public string Username { get; set; } = Environment.UserName;
+        public string Username { get; set; } = "username";
         /// <summary>Address of the clip server (the Worker). Empty until set up in Settings.</summary>
         public string ApiUrl { get; set; } = "";
 

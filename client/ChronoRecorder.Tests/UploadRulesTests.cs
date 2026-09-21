@@ -9,12 +9,18 @@ namespace ChronoRecorder.Tests
         [InlineData("Oliver Meihls", "Oliver_Meihls")]
         [InlineData("a.b@c!", "a_b_c_")]
         [InlineData("../x", "___x")]
-        [InlineData("", "player")]
-        [InlineData(null, "player")]
-        [InlineData("   ", "player")]
+        [InlineData("", "username")]
+        [InlineData(null, "username")]
+        [InlineData("   ", "username")]
         public void SanitizeUsername_MakesNamesTheServerAccepts(string? input, string expected)
         {
             Assert.Equal(expected, UploadRules.SanitizeUsername(input));
+        }
+
+        [Fact]
+        public void ANewConfig_DoesNotUseTheWindowsAccountName()
+        {
+            Assert.Equal("username", new RecorderConfig().Username);
         }
 
         [Fact]

@@ -85,7 +85,10 @@ namespace ChronoRecorder
             await webView.EnsureCoreWebView2Async(await WebView2Runtime.GetEnvironmentAsync());
             var core = webView.CoreWebView2;
 
+            // A folder can vanish while Chrono runs (an uninstall, a cleaner); mapping a missing one throws.
             Directory.CreateDirectory(config.OutputFolder);
+            Directory.CreateDirectory(media.ThumbsFolder);
+            Directory.CreateDirectory(library.ClipsFolder);
             string ui = Path.Combine(AppContext.BaseDirectory, "UI");
             core.SetVirtualHostNameToFolderMapping(AppHost, ui, CoreWebView2HostResourceAccessKind.Allow);
             core.SetVirtualHostNameToFolderMapping("thumbs.chrono", media.ThumbsFolder, CoreWebView2HostResourceAccessKind.Allow);

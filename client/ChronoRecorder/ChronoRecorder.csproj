@@ -3,6 +3,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ApplicationIcon>Assets\chrono.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Chrono</Product>
+    <Company>Chrono</Company>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
