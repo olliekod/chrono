@@ -392,6 +392,9 @@ namespace ChronoRecorder
         /// <summary>
         /// "auto" (or empty) means detect the GPU encoder once and reuse it.
         /// </summary>
+        /// <summary>The encoder in use (the configured one, or the best this PC has when set to auto).</summary>
+        public string EncoderName => ResolveEncoder();
+
         private string ResolveEncoder()
         {
             if (string.IsNullOrWhiteSpace(config.Encoder) ||

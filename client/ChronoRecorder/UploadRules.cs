@@ -6,7 +6,7 @@ namespace ChronoRecorder
     public sealed record UploadSettings(string ServerUrl, string UploadKey, string Username);
 
     /// <summary>What the Worker needs to know about a clip. Everything is optional metadata.</summary>
-    public sealed record ClipInfo(double? DurationSeconds, string? Resolution, int? Fps, int? BitrateKbps);
+    public sealed record ClipInfo(double? DurationSeconds, string? Resolution, int? Fps, int? BitrateKbps, string? Title = null);
 
     /// <summary>Pure decisions about uploading: what counts as configured, and how to clean up user input.</summary>
     public static class UploadRules

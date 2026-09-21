@@ -65,6 +65,7 @@ namespace ChronoRecorder
                 {
                     username = settings.Username,
                     filename = Path.GetFileName(filePath),
+                    title = info.Title,
                     size,
                     duration = info.DurationSeconds,
                     resolution = info.Resolution,
@@ -108,6 +109,14 @@ namespace ChronoRecorder
                 "finish the upload", () => JsonBody(new { parts = uploaded }), ct);
 
             return new UploadResult(clipId, (string?)done["link"] ?? link);
+        }
+
+        /// <summary>Rename an uploaded clip on the server, so its page and Discord embed show the new title.</summary>
+        public async Task RenameAsync(UploadSettings settings, string clipId, string title, CancellationToken ct = default)
+        {
+            string baseUrl = settings.ServerUrl.TrimEnd('/');
+            await SendAsync(new HttpMethod("PATCH"), $"{baseUrl}/api/clips/{Uri.EscapeDataString(clipId)}", settings.UploadKey, "rename the clip",
+                () => JsonBody(new { title }), ct);
         }
 
         private static StringContent JsonBody(object body)
