@@ -23,3 +23,7 @@ worker/.wrangler/
 worker/.dev.vars
 worker/.prod-upload-key
 worker/worker-configuration.d.ts
+
+# Bundled FFmpeg (fetched by scripts/fetch-ffmpeg.ps1) and published builds
+client/ChronoRecorder/ffmpeg/
+dist/

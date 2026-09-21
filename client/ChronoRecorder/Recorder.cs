@@ -268,7 +268,7 @@ namespace ChronoRecorder
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
+                    FileName = FfmpegLocator.Path,
                     Arguments = CaptureCommand.Build(request),
                     UseShellExecute = false,
                     RedirectStandardInput = true,
@@ -530,7 +530,7 @@ namespace ChronoRecorder
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
+                    FileName = FfmpegLocator.Path,
                     Arguments = arguments,
                     UseShellExecute = false,
                     RedirectStandardError = true,

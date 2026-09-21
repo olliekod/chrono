@@ -23,7 +23,7 @@ namespace ChronoRecorder
         private readonly Dictionary<string, double?> measured = new();
 
         /// <param name="nominalSeconds">Length of a normal segment. FFmpeg splits on this exactly.</param>
-        /// <param name="probe">Measures a file's real length (ffprobe). Only used for a run's last file.</param>
+        /// <param name="probe">Measures a file's real length (ffmpeg -i). Only used for a run's last file.</param>
         public SegmentTracker(string folder, double nominalSeconds, Func<string, double?> probe)
         {
             this.folder = folder;

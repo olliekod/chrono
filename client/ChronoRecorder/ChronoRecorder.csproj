@@ -21,6 +21,10 @@
     <None Update="UI\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- FFmpeg ships with the app. scripts\fetch-ffmpeg.ps1 puts it here; without it the app uses the PATH. -->
+    <None Update="ffmpeg\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

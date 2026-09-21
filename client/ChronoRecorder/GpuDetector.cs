@@ -110,7 +110,7 @@ namespace ChronoRecorder
                 {
                     StartInfo = new System.Diagnostics.ProcessStartInfo
                     {
-                        FileName = "ffmpeg",
+                        FileName = FfmpegLocator.Path,
                         Arguments = "-encoders",
                         RedirectStandardOutput = true,
                         UseShellExecute = false,

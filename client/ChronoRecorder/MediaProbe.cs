@@ -1,79 +1,57 @@
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 
 namespace ChronoRecorder
 {
-    /// <summary>Reads facts about media files with ffprobe.</summary>
+    /// <summary>Reads facts about media files by asking FFmpeg to open them (see <see cref="MediaInfoParser"/>).</summary>
     public static class MediaProbe
     {
         /// <summary>The picture size of a media file as "1920x1080", or null if it can't be read.</summary>
         public static string? VideoSizeText(string path)
         {
-            try
-            {
-                using var probe = Process.Start(new ProcessStartInfo
-                {
-                    FileName = "ffprobe",
-                    Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 \"{path}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                });
-
-                if (probe == null) return null;
-
-                var output = probe.StandardOutput.ReadToEndAsync();
-                probe.StandardError.ReadToEndAsync();
-                if (!probe.WaitForExit(5000)) { try { probe.Kill(); } catch { } return null; }
-
-                string text = output.Result.Trim();
-                return System.Text.RegularExpressions.Regex.IsMatch(text, @"^\d{2,5}x\d{2,5}$") ? text : null;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠ Could not read the size of {Path.GetFileName(path)}: {ex.Message}");
-                return null;
-            }
+            string? output = Inspect(path);
+            return output == null ? null : MediaInfoParser.VideoSize(output);
         }
 
-        /// <summary>
-        /// Real duration of a media file, or null if ffprobe isn't available or can't read it.
-        /// </summary>
+        /// <summary>Real duration of a media file, or null if FFmpeg isn't available or can't read it.</summary>
         public static double? DurationSeconds(string path)
+        {
+            string? output = Inspect(path);
+            return output == null ? null : MediaInfoParser.Duration(output);
+        }
+
+        /// <summary>FFmpeg's description of the file. It exits with an error because no output is given; that is expected.</summary>
+        private static string? Inspect(string path)
         {
             try
             {
-                using var probe = Process.Start(new ProcessStartInfo
+                using var process = Process.Start(new ProcessStartInfo
                 {
-                    FileName = "ffprobe",
-                    Arguments = $"-v error -show_entries format=duration -of default=nw=1:nk=1 \"{path}\"",
+                    FileName = FfmpegLocator.Path,
+                    Arguments = $"-hide_banner -i \"{path}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true
                 });
 
-                if (probe == null) return null;
+                if (process == null) return null;
 
-                var output = probe.StandardOutput.ReadToEndAsync();
-                probe.StandardError.ReadToEndAsync();
+                _ = process.StandardOutput.ReadToEndAsync();
+                var stderr = process.StandardError.ReadToEndAsync();
 
-                if (!probe.WaitForExit(5000))
+                if (!process.WaitForExit(5000))
                 {
-                    try { probe.Kill(); } catch { }
+                    try { process.Kill(); } catch { }
                     return null;
                 }
 
-                return double.TryParse(output.Result.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)
-                    ? seconds
-                    : null;
+                return stderr.Result;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"⚠ Could not probe {Path.GetFileName(path)}: {ex.Message}");
+                Console.WriteLine($"⚠ Could not read {Path.GetFileName(path)}: {ex.Message}");
                 return null;
             }
         }

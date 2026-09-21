@@ -24,6 +24,10 @@ namespace ChronoRecorder
             Console.WriteLine("=== Chrono Clip Recorder ===");
             Console.WriteLine($"Started at: {DateTime.Now}\n");
 
+            Console.WriteLine(FfmpegLocator.IsBundled ? $"✓ Using the FFmpeg that came with Chrono: {FfmpegLocator.Path}" : "Using FFmpeg from the PATH");
+
+            if (!WebView2Runtime.EnsureInstalled()) return;
+
             // Load configuration
             config = ConfigManager.Load();
             Console.WriteLine($"✓ Configuration loaded\n");
