@@ -1,9 +1,9 @@
 import { isAuthorized } from "./auth";
-import { countView, deleteClip, findClip, findReadyClip, insertClip, markReady } from "./db";
+import { countView, deleteClip, findClip, findReadyClip, insertClip, markReady, setTitle } from "./db";
 import { renderWatchPage, watchPageCsp } from "./html";
 import { isClipId, newClipId } from "./ids";
 import { parseRange } from "./range";
-import { MAX_PARTS, parseCompletion, parseNewClip } from "./validate";
+import { MAX_PARTS, parseCompletion, parseNewClip, parseTitle } from "./validate";
 
 export class HttpError extends Error {
   constructor(
@@ -173,6 +173,7 @@ export async function clipMetadata(request: Request, env: Env, id: string): Prom
   return json({
     id: clip.id,
     owner: clip.owner,
+    title: clip.title,
     filename: clip.filename,
     duration: clip.duration_seconds,
     resolution: clip.resolution,
@@ -184,6 +185,25 @@ export async function clipMetadata(request: Request, env: Env, id: string): Prom
     link: `${origin}/watch/${clip.id}`,
     video: `${origin}/v/${clip.id}.mp4`,
   });
+}
+
+/** PATCH /api/clips/:id {title}: rename an uploaded clip. An empty title goes back to "<owner>'s clip". */
+export async function renameClip(request: Request, env: Env, id: string): Promise<Response> {
+  const denied = await requireAuth(request, env);
+  if (denied) return denied;
+
+  const clip = isClipId(id) ? await findReadyClip(env.DB, id) : null;
+  if (!clip) return notFound();
+
+  const body = await readJson(request);
+  if (typeof body !== "object" || body === null || Array.isArray(body) || !("title" in body)) {
+    return errorResponse(400, "Expected {\"title\": \"...\"}");
+  }
+  const title = parseTitle((body as { title: unknown }).title);
+  if (!title.ok) return errorResponse(400, title.error);
+
+  await setTitle(env.DB, id, title.value);
+  return json({ id, title: title.value });
 }
 
 /** GET /watch/:id: the shareable page, with the tags Discord reads to embed the video. */

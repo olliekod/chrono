@@ -5,6 +5,7 @@ import {
   createClip,
   errorResponse,
   json,
+  renameClip,
   serveVideo,
   uploadPart,
   watchPage,
@@ -25,6 +26,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         uploadPart: "PUT /api/clips/:id/parts/:n",
         complete: "POST /api/clips/:id/complete",
         metadata: "GET /api/clips/:id",
+        rename: "PATCH /api/clips/:id",
         watch: "GET /watch/:id",
         video: "GET /v/:id.mp4",
       },
@@ -44,7 +46,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   }
 
   if ((m = /^\/api\/clips\/([^/]+)$/.exec(pathname))) {
-    return method === "GET" ? clipMetadata(request, env, m[1]) : methodNotAllowed("GET");
+    if (method === "GET") return clipMetadata(request, env, m[1]);
+    if (method === "PATCH") return renameClip(request, env, m[1]);
+    return methodNotAllowed("GET, PATCH");
   }
 
   if ((m = /^\/watch\/([^/]+)$/.exec(pathname))) {

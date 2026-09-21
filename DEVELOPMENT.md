@@ -114,6 +114,8 @@ Upload flow (all routes need `Authorization: Bearer <UPLOAD_KEY>`):
 2. `PUT /api/clips/:id/parts/:n` uploads one part. Its size must be exactly `partSize` (the last part takes the remainder). This is enforced by piping the body through `FixedLengthStream`, not by trusting `Content-Length`.
 3. `POST /api/clips/:id/complete` requires exactly parts `1..N`, completes the R2 upload, checks the final size against the declared size, and flips the row to `ready`. Repeating it is harmless.
 
+Titles: `POST /api/clips` takes an optional `title` (`parseTitle`: control characters become spaces, whitespace collapsed, max 100 chars, blank = none) stored in `clips.title` (migration `0002_clip_title.sql`); `PATCH /api/clips/:id` with `{"title": ...}` renames an uploaded clip (needs the key). The watch page, `<title>` and `og:title` show the title, falling back to `<owner>'s clip`. **Deploying this needs `npx wrangler d1 migrations apply chrono --remote` before `npx wrangler deploy`.**
+
 Viewing (no auth, 12-character random ids): `GET /watch/:id` renders the page with `og:video` tags and a nonce-based CSP, `GET|HEAD /v/:id.mp4` streams from R2 with Range support (`range.ts`), and `GET /api/clips/:id` returns public metadata. Only `ready` clips are visible. The bucket stays private; video is served through the Worker.
 
 Why chunked uploads: Workers cap request bodies at 100 MB on the free plan and a clip can exceed that, so the client sends 16 MiB parts (R2's minimum is 5 MiB, and all parts but the last must be the same size).

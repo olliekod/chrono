@@ -3,7 +3,8 @@ import { isAuthorized } from "../src/auth";
 import { escapeHtml, formatDuration } from "../src/html";
 import { isClipId, newClipId } from "../src/ids";
 import { parseRange } from "../src/range";
-import { parseNewClip, sanitizeFilename } from "../src/validate";
+import { MAX_TITLE_LENGTH, parseNewClip, parseTitle, sanitizeFilename } from "../src/validate";
+import { clipTitle } from "../src/html";
 
 function req(authorization?: string): Request {
   return new Request("https://x.test/", { headers: authorization ? { Authorization: authorization } : {} });
@@ -115,7 +116,7 @@ describe("parseNewClip", () => {
     const parsed = parseNewClip({ username: "olly", filename: "a.mp4", size: 5, duration: 1.5, resolution: "1920x1080", fps: 60, bitrate: 8000 }, 100);
     expect(parsed).toEqual({
       ok: true,
-      value: { owner: "olly", filename: "a.mp4", size: 5, duration: 1.5, resolution: "1920x1080", fps: 60, bitrate: 8000 },
+      value: { owner: "olly", filename: "a.mp4", title: null, size: 5, duration: 1.5, resolution: "1920x1080", fps: 60, bitrate: 8000 },
     });
   });
 
@@ -128,5 +129,39 @@ describe("parseNewClip", () => {
     expect(parseNewClip({ username: "olly", size: 101 }, 100)).toMatchObject({ ok: false, status: 413 });
     expect(parseNewClip({ username: "olly", size: -1 }, 100)).toMatchObject({ ok: false, status: 400 });
     expect(parseNewClip("nope", 100)).toMatchObject({ ok: false, status: 400 });
+  });
+});
+
+describe("parseTitle", () => {
+  it("keeps what a person typed, tidied up", () => {
+    expect(parseTitle("  Triple kill   on the boss ")).toEqual({ ok: true, value: "Triple kill on the boss" });
+  });
+
+  it("turns control characters and line breaks into spaces", () => {
+    expect(parseTitle("a\nb\u0000c\td")).toEqual({ ok: true, value: "a b c d" });
+  });
+
+  it("treats missing or blank titles as no title", () => {
+    expect(parseTitle(undefined)).toEqual({ ok: true, value: null });
+    expect(parseTitle(null)).toEqual({ ok: true, value: null });
+    expect(parseTitle("   ")).toEqual({ ok: true, value: null });
+  });
+
+  it("rejects titles that are too long or not text", () => {
+    expect(parseTitle("x".repeat(MAX_TITLE_LENGTH))).toMatchObject({ ok: true });
+    expect(parseTitle("x".repeat(MAX_TITLE_LENGTH + 1))).toMatchObject({ ok: false });
+    expect(parseTitle(42)).toMatchObject({ ok: false });
+  });
+
+  it("is used by parseNewClip", () => {
+    expect(parseNewClip({ username: "olly", size: 5, title: "Nice one" }, 100)).toMatchObject({ ok: true, value: { title: "Nice one" } });
+    expect(parseNewClip({ username: "olly", size: 5, title: 7 }, 100)).toMatchObject({ ok: false, status: 400 });
+  });
+});
+
+describe("clipTitle", () => {
+  it("prefers the owner's title and falls back to the old wording", () => {
+    expect(clipTitle({ title: "Nice one", owner: "olly" })).toBe("Nice one");
+    expect(clipTitle({ title: null, owner: "olly" })).toBe("olly's clip");
   });
 });

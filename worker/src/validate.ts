@@ -2,9 +2,12 @@ export const MAX_PARTS = 10_000; // R2 multipart limit
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; status: 400 | 413; error: string };
 
+export const MAX_TITLE_LENGTH = 100;
+
 export interface NewClip {
   owner: string;
   filename: string;
+  title: string | null;
   size: number;
   duration: number | null;
   resolution: string | null;
@@ -30,6 +33,19 @@ export function sanitizeFilename(name: string): string {
   return `${stem || "clip"}.mp4`;
 }
 
+/**
+ * A clip title typed by a person: control characters dropped, runs of whitespace collapsed, ends trimmed.
+ * Empty or missing means "no title" (null). Escaping for HTML happens where it is shown, not here.
+ */
+export function parseTitle(value: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (typeof value !== "string") return { ok: false, error: "title must be a string" };
+
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (cleaned.length > MAX_TITLE_LENGTH) return { ok: false, error: `title must be at most ${MAX_TITLE_LENGTH} characters` };
+  return { ok: true, value: cleaned === "" ? null : cleaned };
+}
+
 function optionalNumber(value: unknown, min: number, max: number, integer: boolean): number | null | undefined {
   if (value === undefined || value === null) return null;
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
@@ -41,7 +57,7 @@ function optionalNumber(value: unknown, min: number, max: number, integer: boole
 export function parseNewClip(input: unknown, maxBytes: number): Parsed<NewClip> {
   if (!isRecord(input)) return bad("Expected a JSON object");
 
-  const { username, filename, size, duration, resolution, fps, bitrate } = input;
+  const { username, filename, title, size, duration, resolution, fps, bitrate } = input;
 
   if (typeof username !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(username)) {
     return bad("username must be 1-32 letters, digits, _ or -");
@@ -73,11 +89,15 @@ export function parseNewClip(input: unknown, maxBytes: number): Parsed<NewClip> 
   const bitrateValue = optionalNumber(bitrate, 1, 1_000_000, true);
   if (bitrateValue === undefined) return bad("bitrate must be a positive integer (kbps)");
 
+  const titleValue = parseTitle(title);
+  if (!titleValue.ok) return bad(titleValue.error);
+
   return {
     ok: true,
     value: {
       owner: username,
       filename: sanitizeFilename(rawName),
+      title: titleValue.value,
       size,
       duration: durationValue,
       resolution: (resolution as string | null | undefined) ?? null,

@@ -168,3 +168,79 @@ describe("routing", () => {
     expect((await api("/watch/aaaaaaaaaaaa", { method: "POST" })).status).toBe(405);
   });
 });
+
+describe("clip titles", () => {
+  it("shows the title on the page and in the embed tags", async () => {
+    const { id } = await uploadClip(SIZE, { title: "Triple kill on the boss" });
+
+    const html = await (await api(`/watch/${id}`)).text();
+
+    expect(html).toContain("<title>Triple kill on the boss</title>");
+    expect(html).toContain(`<meta property="og:title" content="Triple kill on the boss">`);
+    expect(html).toContain("<h1>Triple kill on the boss</h1>");
+    expect(html).toContain("by olly");
+  });
+
+  it("falls back to the owner's name when there is no title", async () => {
+    const { id } = await uploadClip(SIZE);
+
+    const html = await (await api(`/watch/${id}`)).text();
+
+    expect(html).toContain(`<meta property="og:title" content="olly&#39;s clip">`);   // the apostrophe is escaped in HTML
+  });
+
+  it("escapes markup in a title", async () => {
+    const { id } = await uploadClip(SIZE, { title: `<script>alert(1)</script> "quoted"` });
+
+    const html = await (await api(`/watch/${id}`)).text();
+
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("is part of the public metadata", async () => {
+    const { id } = await uploadClip(SIZE, { title: "Nice one" });
+
+    const meta = await (await api(`/api/clips/${id}`)).json<{ title: string | null }>();
+
+    expect(meta.title).toBe("Nice one");
+  });
+});
+
+describe("PATCH /api/clips/:id (rename)", () => {
+  const patch = (id: string, body: unknown, headers: Record<string, string> = AUTH) =>
+    api(`/api/clips/${id}`, { method: "PATCH", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  it("changes the title shown on the page", async () => {
+    const { id } = await uploadClip(SIZE, { title: "Before" });
+
+    const res = await patch(id, { title: "After" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id, title: "After" });
+    expect(await (await api(`/watch/${id}`)).text()).toContain("<title>After</title>");
+  });
+
+  it("an empty title goes back to the default wording", async () => {
+    const { id } = await uploadClip(SIZE, { title: "Before" });
+
+    await patch(id, { title: "" });
+
+    expect(await (await api(`/watch/${id}`)).text()).toContain("<title>olly&#39;s clip</title>");
+  });
+
+  it("needs the upload key", async () => {
+    const { id } = await uploadClip(SIZE);
+
+    expect((await patch(id, { title: "x" }, {})).status).toBe(401);
+    expect((await patch(id, { title: "x" }, { Authorization: "Bearer wrong" })).status).toBe(401);
+  });
+
+  it("rejects a bad body and an unknown clip", async () => {
+    const { id } = await uploadClip(SIZE);
+
+    expect((await patch(id, { nope: 1 })).status).toBe(400);
+    expect((await patch(id, { title: "x".repeat(101) })).status).toBe(400);
+    expect((await patch("abcdefghijkl", { title: "x" })).status).toBe(404);
+  });
+});

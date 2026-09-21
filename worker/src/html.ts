@@ -43,6 +43,11 @@ export function watchPageCsp(nonce: string): string {
   ].join("; ");
 }
 
+/** What the clip is called: the title its owner gave it, else "<owner>'s clip". */
+export function clipTitle(clip: Pick<ClipRow, "title" | "owner">): string {
+  return clip.title ?? `${clip.owner}'s clip`;
+}
+
 export function renderWatchPage(clip: ClipRow, origin: string, nonce: string): string {
   const e = escapeHtml;
   const pageUrl = `${origin}/watch/${clip.id}`;
@@ -56,17 +61,18 @@ export function renderWatchPage(clip: ClipRow, origin: string, nonce: string): s
     `${clip.views} ${clip.views === 1 ? "view" : "views"}`,
   ].filter((part): part is string => part !== null);
 
-  const description = [clip.filename, ...facts].join(" • ");
+  const title = clipTitle(clip);
+  const description = [`by ${clip.owner}`, ...facts].join(" • ");
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${e(clip.owner)}'s clip</title>
+<title>${e(title)}</title>
 <meta property="og:site_name" content="Chrono">
 <meta property="og:type" content="video.other">
-<meta property="og:title" content="${e(clip.owner)}'s clip">
+<meta property="og:title" content="${e(title)}">
 <meta property="og:description" content="${e(description)}">
 <meta property="og:url" content="${e(pageUrl)}">
 <meta property="og:video" content="${e(videoUrl)}">
@@ -100,7 +106,7 @@ export function renderWatchPage(clip: ClipRow, origin: string, nonce: string): s
   <video controls autoplay muted loop playsinline preload="metadata" src="${e(videoUrl)}"></video>
   <div class="info">
     <div>
-      <h1>${e(clip.owner)}</h1>
+      <h1>${e(title)}</h1>
       <div class="facts">${e(description)}</div>
     </div>
     <button id="copy" type="button">Copy link</button>
