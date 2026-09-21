@@ -55,7 +55,7 @@ namespace ChronoRecorder
                     .Select(h => new HotkeyDto(h.Name, h.Modifiers.Concat(new[] { h.Key }).ToList(), h.ClipLengthSeconds)).ToList(),
                 ShowDiagnostics: config.ShowDiagnostics,
                 Version: DiagnosticsCollector.AppVersion,
-                NeedsOnboarding: !config.OnboardingCompleted);
+                NeedsOnboarding: config.NeedsOnboarding);
         }
 
         public static string ClipQualityText(string? resolution, int fps)

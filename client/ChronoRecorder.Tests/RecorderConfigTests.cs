@@ -173,6 +173,32 @@ namespace ChronoRecorder.Tests
             Assert.True(updated.OnboardingCompleted);
         }
 
+        [Theory]
+        [InlineData("https://clips.example.workers.dev", "")]
+        [InlineData("", "a-key")]
+        [InlineData("https://clips.example.workers.dev", "a-key")]
+        public void AlreadyHavingAServerOrKey_MeansThereIsNothingToAsk(string apiUrl, string key)
+        {
+            // From an earlier version, from Settings before the setup was finished, or a first-run flag that was never set.
+            var current = new RecorderConfig { ConfigVersion = RecorderConfig.CurrentConfigVersion, FirstRunCompleted = false, OnboardingCompleted = false, ApiUrl = apiUrl, UploadKey = key };
+            var old = new RecorderConfig { ConfigVersion = 2, FirstRunCompleted = false, ApiUrl = apiUrl, UploadKey = key };
+
+            old.MigrateLegacyValues();
+
+            Assert.False(current.NeedsOnboarding);
+            Assert.True(old.OnboardingCompleted);
+        }
+
+        [Fact]
+        public void ABlankInstall_NeedsTheSetup_UntilItIsFinished()
+        {
+            var config = new RecorderConfig { ApiUrl = "  ", UploadKey = "" };
+            Assert.True(config.NeedsOnboarding);
+
+            config.OnboardingCompleted = true;
+            Assert.False(config.NeedsOnboarding);
+        }
+
         [Fact]
         public void ANewInstall_StillGetsTheSetup_EvenAfterQuittingBeforeFinishing()
         {

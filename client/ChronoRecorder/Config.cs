@@ -136,6 +136,14 @@ namespace ChronoRecorder
 
         /// <summary>False until the first-run setup (username, server address, upload key) has been finished or skipped.</summary>
         public bool OnboardingCompleted { get; set; } = false;
+
+        /// <summary>
+        /// Whether to show the first-run setup. Never for someone who has already filled in the server address or key,
+        /// whether in an earlier version or in Settings: there is nothing left to ask them.
+        /// </summary>
+        [JsonIgnore]
+        public bool NeedsOnboarding
+            => !OnboardingCompleted && string.IsNullOrWhiteSpace(ApiUrl) && string.IsNullOrWhiteSpace(UploadKey);
         public bool SaveLocalCopy { get; set; } = false;
 
         /// <summary>
@@ -175,7 +183,7 @@ namespace ChronoRecorder
 
             // The setup only exists for people who are new. Someone who has already used Chrono has their settings and
             // shouldn't be walked through them when they update.
-            if (ConfigVersion < 3 && FirstRunCompleted)
+            if (ConfigVersion < 3 && (FirstRunCompleted || !NeedsOnboarding))
                 OnboardingCompleted = true;
 
             ConfigVersion = CurrentConfigVersion;

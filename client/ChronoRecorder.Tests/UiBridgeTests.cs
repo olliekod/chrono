@@ -590,6 +590,14 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public async Task ServerDetailsFromSettings_MeanTheSetupIsNotAskedFor()
+        {
+            ConfigureUploads();
+
+            Assert.False((bool)(await Ok("getStatus"))["needsOnboarding"]!);
+        }
+
+        [Fact]
         public async Task TheSetup_SavesWhatWasFilledIn()
         {
             var reply = await Ok("completeOnboarding", new { username = "  Pilot_7 ", apiUrl = "https://clips.example.workers.dev/", uploadKey = " s3cret " });
