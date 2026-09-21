@@ -11,61 +11,80 @@ namespace ChronoRecorder
         private static Recorder? recorder;
         private static HotkeyManager? hotkeyManager;
         private static Notifier? notifier;
-        private static Form? uiForm;
+        private static TrayApp? tray;
         private static readonly Uploader uploader = new Uploader(Uploader.CreateHttpClient());
 
         [STAThread]
         static void Main(string[] args)
         {
-            // Launch UI
+            // The installed app has no console window; keep a log file so problems on someone's PC can be read.
+            FileLog.Attach();
+
+            // One Chrono at a time. Launching it again just brings the running one's window forward.
+            using var instance = new SingleInstance();
+            if (!instance.IsFirst)
+            {
+                instance.AskFirstToShow();
+                return;
+            }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
             Console.WriteLine("=== Chrono Clip Recorder ===");
-            Console.WriteLine($"Started at: {DateTime.Now}\n");
-
+            Console.WriteLine($"Started at: {DateTime.Now}");
             Console.WriteLine(FfmpegLocator.IsBundled ? $"✓ Using the FFmpeg that came with Chrono: {FfmpegLocator.Path}" : "Using FFmpeg from the PATH");
 
             if (!WebView2Runtime.EnsureInstalled()) return;
 
-            // Load configuration
             config = ConfigManager.Load();
-            Console.WriteLine($"✓ Configuration loaded\n");
+            Console.WriteLine("✓ Configuration loaded");
 
-            notifier = new Notifier(config);
-
-            // Create recorder
             recorder = new Recorder(config);
             recorder.StartMonitoring();
 
-            // Create hotkey manager
             hotkeyManager = new HotkeyManager(config);
             hotkeyManager.HotkeyPressed += OnHotkeyPressed;
             hotkeyManager.RegisterHotkeys();
             Console.WriteLine();
 
-            var mainWindow = new WebViewHost(config);
-            uiForm = mainWindow;
-            mainWindow.SetRecorder(recorder);
+            // Chrono lives in the tray; the window is opened on demand and freed when closed.
+            tray = new TrayApp(config, recorder, hotkeyManager);
+            notifier = new Notifier(config, tray.Icon);
+            instance.ListenForShowRequests(tray.RequestShow);
 
             // FFmpeg failures arrive on a worker thread; the tray icon belongs to the UI thread.
             recorder.RecordingFailed += message => OnUiThread(() => notifier?.Error("Recording problem", message));
             recorder.Warning += message => OnUiThread(() => notifier?.Error("Chrono", message));
-            // Settings edit the shared config in place; re-register so new hotkeys work without a restart.
-            mainWindow.ConfigSaved += () => hotkeyManager.ReloadHotkeys();
 
-            Application.Run(mainWindow);
+            tray.ApplyStartWithWindows();
+
+            bool startedInBackground = Array.Exists(args, a => a == AutoStart.BackgroundFlag);
+            if (!config.FirstRunCompleted)
+            {
+                // The very first run opens the window so there is something to see and set up.
+                config.FirstRunCompleted = true;
+                ConfigManager.Save(config);
+                tray.ShowWindow();
+            }
+            else if (!startedInBackground)
+            {
+                // Launched by hand: nothing appears, so say where Chrono went.
+                notifier.Info("Chrono is running in the tray", "Click its icon to open Chrono. It records games automatically.");
+            }
+
+            Application.Run(tray);
 
             // Cleanup
             hotkeyManager.Dispose();
             recorder.StopMonitoring();
             recorder.StopRecording();
-            notifier.Dispose();
+            Console.WriteLine("Chrono exited");
         }
 
         private static void OnUiThread(Action action)
         {
-            if (uiForm != null && uiForm.IsHandleCreated && uiForm.InvokeRequired) uiForm.BeginInvoke(action);
+            if (tray != null) tray.Post(action);
             else action();
         }
 

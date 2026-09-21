@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 
@@ -12,6 +13,21 @@ namespace ChronoRecorder
     /// </summary>
     public static class WebView2Runtime
     {
+        private static Task<CoreWebView2Environment>? environment;
+
+        /// <summary>
+        /// The browser environment every Chrono window shares. Its profile lives under %LOCALAPPDATA%: the default is
+        /// a folder next to the exe, which can't be written when Chrono is installed under Program Files.
+        /// </summary>
+        public static Task<CoreWebView2Environment> GetEnvironmentAsync()
+        {
+            return environment ??= CoreWebView2Environment.CreateAsync(
+                browserExecutableFolder: null,
+                userDataFolder: Path.Combine(Environment_LocalAppData(), "Chrono", "WebView2"));
+        }
+
+        private static string Environment_LocalAppData() => System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
+
         public static bool IsInstalled()
         {
             try { return !string.IsNullOrEmpty(CoreWebView2Environment.GetAvailableBrowserVersionString()); }

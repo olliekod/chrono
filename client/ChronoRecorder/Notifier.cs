@@ -13,15 +13,11 @@ namespace ChronoRecorder
         private readonly RecorderConfig config;
         private readonly NotifyIcon icon;
 
-        public Notifier(RecorderConfig config)
+        /// <param name="icon">The tray icon, owned by <see cref="TrayApp"/>; balloons are shown from it.</param>
+        public Notifier(RecorderConfig config, NotifyIcon icon)
         {
             this.config = config;
-            icon = new NotifyIcon
-            {
-                Icon = SystemIcons.Application,
-                Text = "Chrono",
-                Visible = true
-            };
+            this.icon = icon;
         }
 
         /// <summary>Progress and success messages; silenced by the "Show notifications" setting.</summary>
@@ -40,11 +36,7 @@ namespace ChronoRecorder
             icon.ShowBalloonTip(5000, title, text, kind);
         }
 
-        public void Dispose()
-        {
-            // Hide first, or Windows leaves a ghost icon in the tray until the mouse passes over it.
-            icon.Visible = false;
-            icon.Dispose();
-        }
+        /// <summary>Nothing to release: the tray icon belongs to <see cref="TrayApp"/>.</summary>
+        public void Dispose() { }
     }
 }

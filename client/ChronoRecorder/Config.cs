@@ -81,6 +81,12 @@ namespace ChronoRecorder
         public bool AutoUpload { get; set; } = true;
         public bool CopyLinkToClipboard { get; set; } = true;
         public bool ShowNotifications { get; set; } = true;
+
+        /// <summary>Start Chrono (into the tray) when Windows starts. Only a real install is ever registered.</summary>
+        public bool StartWithWindows { get; set; } = true;
+
+        /// <summary>False until the first run has opened the window once; after that Chrono starts in the tray.</summary>
+        public bool FirstRunCompleted { get; set; } = false;
         public bool SaveLocalCopy { get; set; } = false;
 
         /// <summary>

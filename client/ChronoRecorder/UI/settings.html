@@ -433,6 +433,7 @@
                 <label class="check"><input type="checkbox" id="autoUpload"> Upload clips automatically after saving</label>
                 <label class="check"><input type="checkbox" id="copyLink"> Copy the share link to the clipboard</label>
                 <label class="check"><input type="checkbox" id="showNotifications"> Show notifications</label>
+                <label class="check"><input type="checkbox" id="startWithWindows"> Start Chrono with Windows (runs in the tray)</label>
             </div>
         </div>
 
@@ -609,6 +610,7 @@
             document.getElementById('copyLink').checked = receivedConfig.CopyLinkToClipboard !== false;
             document.getElementById('showNotifications').checked = receivedConfig.ShowNotifications !== false;
             document.getElementById('recordAudio').checked = receivedConfig.RecordAudio !== false;
+            document.getElementById('startWithWindows').checked = receivedConfig.StartWithWindows !== false;
             document.getElementById('recordMic').checked = receivedConfig.RecordMicrophone === true;
             document.getElementById('resolution').value = receivedConfig.Resolution || '1920x1080';
             document.getElementById('fps').value = receivedConfig.Fps || 60;
@@ -736,6 +738,8 @@
                 RecordMicrophone: document.getElementById('recordMic').checked,
                 AudioDelayMs: receivedConfig.AudioDelayMs || 0,
                 SaveLocalCopy: receivedConfig.SaveLocalCopy,
+                StartWithWindows: document.getElementById('startWithWindows').checked,
+                FirstRunCompleted: receivedConfig.FirstRunCompleted !== false,
                 Hotkeys: finalHotkeys
             };
 

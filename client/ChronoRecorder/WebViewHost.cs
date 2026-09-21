@@ -62,7 +62,7 @@ namespace ChronoRecorder
             try
             {
                 // Initialize WebView2 environment
-                await webView.EnsureCoreWebView2Async(null);
+                await webView.EnsureCoreWebView2Async(await WebView2Runtime.GetEnvironmentAsync());
 
                 // Enable dev tools for debugging
                 webView.CoreWebView2.Settings.AreDevToolsEnabled = true;
@@ -146,7 +146,8 @@ namespace ChronoRecorder
                         break;
 
                     case "closeWindow":
-                        Application.Exit();
+                        // Closing the window doesn't quit Chrono; it keeps recording from the tray.
+                        this.Close();
                         break;
 
                     case "openLibrary":
@@ -309,7 +310,7 @@ namespace ChronoRecorder
             {
                 Console.WriteLine("Initializing settings WebView2...");
                 
-                await settingsWebView.EnsureCoreWebView2Async(null);
+                await settingsWebView.EnsureCoreWebView2Async(await WebView2Runtime.GetEnvironmentAsync());
                 
                 Console.WriteLine("Settings WebView2 initialized");
                 
@@ -505,17 +506,30 @@ namespace ChronoRecorder
             webView.CoreWebView2.NavigateToString(html);
         }
         private Recorder? recorder;
+        private EventHandler<string>? applicationChangedHandler;
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            // The recorder and its timers outlive this window: let go of everything that points back at it.
+            statusUpdateTimer?.Stop();
+            statusUpdateTimer?.Dispose();
+            statusUpdateTimer = null;
+            if (recorder != null && applicationChangedHandler != null) recorder.ApplicationChanged -= applicationChangedHandler;
+            base.OnFormClosed(e);
+        }
 
         public void SetRecorder(Recorder rec)
         {
             Console.WriteLine("WebViewHost: Setting recorder...");
             this.recorder = rec;
             
-            // Listen to recording status changes
-            rec.ApplicationChanged += (s, app) =>
+            // Listen to recording status changes (unhooked when the window closes, since the recorder outlives it)
+            applicationChangedHandler = (s, app) =>
             {
+                if (IsDisposed || !IsHandleCreated) return;
                 SendStatusUpdate(rec.TargetName, rec.IsRecordingActive);
             };
+            rec.ApplicationChanged += applicationChangedHandler;
             
             // Start polling status
             StartStatusPolling();
