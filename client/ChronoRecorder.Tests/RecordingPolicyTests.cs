@@ -43,6 +43,44 @@ namespace ChronoRecorder.Tests
         }
     }
 
+    public class AutoModePolicyTests
+    {
+        [Fact]
+        public void Auto_RecordsExactlyWhileAGameIsRunning()
+        {
+            Assert.True(RecordingPolicy.ShouldRecord(true, RecorderConfig.RecordingMode.Auto, "", selectedAppRunning: true));
+            Assert.False(RecordingPolicy.ShouldRecord(true, RecorderConfig.RecordingMode.Auto, "", selectedAppRunning: false));
+        }
+
+        [Fact]
+        public void Auto_NeedsNoChosenApplication()
+        {
+            Assert.True(RecordingPolicy.ShouldRecord(true, RecorderConfig.RecordingMode.Auto, null, selectedAppRunning: true));
+        }
+
+        [Fact]
+        public void Auto_NeverRecordsWhileTheRecorderIsOff()
+        {
+            Assert.False(RecordingPolicy.ShouldRecord(false, RecorderConfig.RecordingMode.Auto, "", selectedAppRunning: true));
+        }
+
+        [Fact]
+        public void NewInstallsStartInAutoMode_WithTheRecorderOn()
+        {
+            var config = new RecorderConfig();
+            Assert.Equal(RecorderConfig.RecordingMode.Auto, config.Mode);
+            Assert.True(config.RecorderEnabled);
+        }
+
+        [Fact]
+        public void TheNumbersSavedByOlderVersionsKeepTheirMeaning()
+        {
+            Assert.Equal(0, (int)RecorderConfig.RecordingMode.Display);
+            Assert.Equal(1, (int)RecorderConfig.RecordingMode.Application);
+            Assert.Equal(2, (int)RecorderConfig.RecordingMode.Auto);
+        }
+    }
+
     public class ApplicationNameTests
     {
         [Theory]

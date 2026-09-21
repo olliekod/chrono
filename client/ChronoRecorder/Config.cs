@@ -32,12 +32,17 @@ namespace ChronoRecorder
 
         public enum RecordingMode
         {
+            /// <summary>Record the whole monitor whenever the recorder is on.</summary>
             Display,
-            Application
+            /// <summary>Record while the game chosen in <see cref="SelectedApplication"/> is running.</summary>
+            Application,
+            /// <summary>Find the game that is running and record it: nothing to choose (see <see cref="GameClassifier"/>).
+            /// Appended, so the numbers saved by older versions keep their meaning.</summary>
+            Auto
         }
         
-        public RecordingMode Mode { get; set; } = RecordingMode.Application;
-        public bool RecorderEnabled { get; set; } = false;
+        public RecordingMode Mode { get; set; } = RecordingMode.Auto;
+        public bool RecorderEnabled { get; set; } = true;
         public string SelectedApplication { get; set; } = "";
         public int MinimumFocusTimeSeconds { get; set; } = 2;
 

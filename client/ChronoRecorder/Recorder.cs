@@ -35,6 +35,16 @@ namespace ChronoRecorder
         private System.Threading.Timer? monitorTimer;
         private System.Threading.Timer? pruneTimer;
         private string currentApplication = "";
+
+        // Auto mode: the game found by the scanner, and when to look again.
+        private readonly ProcessScanner scanner = new ProcessScanner();
+        private RunningGame? autoGame;
+        private DateTime nextGameScanUtc = DateTime.MinValue;
+        private static readonly TimeSpan GameScanInterval = TimeSpan.FromSeconds(3);
+
+        /// <summary>The game being recorded (or null). Shown by the UI and used to label clips.</summary>
+        public string? CurrentGameName => config.Mode == RecorderConfig.RecordingMode.Auto ? autoGame?.Candidate.DisplayName
+            : config.Mode == RecorderConfig.RecordingMode.Application && !string.IsNullOrWhiteSpace(config.SelectedApplication) ? config.SelectedApplication : null;
         public event EventHandler<string>? ApplicationChanged;
 
         /// <summary>Raised when recording stops for a reason the user should hear about. The text is fit to show.</summary>
@@ -126,9 +136,12 @@ namespace ChronoRecorder
         private MonitorInfo? PickMonitor()
         {
             // The game's own window, not whatever is in front: recording can start while it is tabbed out.
-            IntPtr window = config.Mode == RecorderConfig.RecordingMode.Application
-                ? WindowDetector.FindApplicationWindow(config.SelectedApplication)
-                : IntPtr.Zero;
+            IntPtr window = config.Mode switch
+            {
+                RecorderConfig.RecordingMode.Application => WindowDetector.FindApplicationWindow(config.SelectedApplication),
+                RecorderConfig.RecordingMode.Auto => autoGame == null ? IntPtr.Zero : scanner.WindowFor(autoGame.Candidate.Pid),
+                _ => IntPtr.Zero
+            };
 
             if (window == IntPtr.Zero) window = WindowDetector.GetForegroundWindowHandle();
             return MonitorLocator.ForWindow(window) ?? MonitorLocator.Primary();
@@ -634,28 +647,65 @@ namespace ChronoRecorder
         /// </summary>
         private void HandleRecordingMode()
         {
-            bool gameRunning = config.RecorderEnabled
-                && config.Mode == RecorderConfig.RecordingMode.Application
-                && WindowDetector.FindApplicationWindow(config.SelectedApplication) != IntPtr.Zero;
+            int? gameBefore = autoGame?.Candidate.Pid;
+            if (config.RecorderEnabled && config.Mode == RecorderConfig.RecordingMode.Auto) UpdateAutoGame();
+            else autoGame = null;
+
+            bool gameRunning = config.RecorderEnabled && config.Mode switch
+            {
+                RecorderConfig.RecordingMode.Application => WindowDetector.FindApplicationWindow(config.SelectedApplication) != IntPtr.Zero,
+                RecorderConfig.RecordingMode.Auto => autoGame != null,
+                _ => false
+            };
 
             bool shouldRecord = RecordingPolicy.ShouldRecord(config.RecorderEnabled, config.Mode, config.SelectedApplication, gameRunning);
 
-            if (shouldRecord && !isRecording)
+            // A different game took over (the old one closed and another was found): record its monitor instead.
+            if (shouldRecord && isRecording && config.Mode == RecorderConfig.RecordingMode.Auto && gameBefore != null && autoGame?.Candidate.Pid != gameBefore)
+            {
+                Console.WriteLine($"Switching recording to {TargetName}");
+                StopRecording();
+                StartRecording();
+            }
+            else if (shouldRecord && !isRecording)
             {
                 Console.WriteLine($"▶️ STARTING RECORDING: {TargetName}");
                 StartRecording();
             }
             else if (!shouldRecord && isRecording)
             {
-                Console.WriteLine(config.RecorderEnabled ? $"⏹️ STOPPING RECORDING ({TargetName} is not running)" : "⏹️ STOPPING RECORDING (recorder disabled)");
+                Console.WriteLine(config.RecorderEnabled ? "⏹️ STOPPING RECORDING (the game is no longer running)" : "⏹️ STOPPING RECORDING (recorder disabled)");
                 StopRecording();
             }
         }
 
         /// <summary>What is being recorded, for the UI: the chosen game, or "display".</summary>
-        public string TargetName => config.Mode == RecorderConfig.RecordingMode.Application && !string.IsNullOrWhiteSpace(config.SelectedApplication)
-            ? config.SelectedApplication
-            : "display";
+        public string TargetName => config.Mode switch
+        {
+            RecorderConfig.RecordingMode.Auto => autoGame?.Candidate.DisplayName ?? "no game running",
+            RecorderConfig.RecordingMode.Application when !string.IsNullOrWhiteSpace(config.SelectedApplication) => config.SelectedApplication,
+            _ => "display"
+        };
+
+        /// <summary>Keep the current game while it runs; when it has gone (or there is none), look for a new one every few seconds.</summary>
+        private void UpdateAutoGame()
+        {
+            if (autoGame != null && scanner.IsStillRunning(autoGame.Candidate)) return;
+
+            if (autoGame != null)
+            {
+                Console.WriteLine($"{autoGame.Candidate.DisplayName} closed");
+                autoGame = null;
+            }
+
+            if (DateTime.UtcNow < nextGameScanUtc) return;
+            nextGameScanUtc = DateTime.UtcNow + GameScanInterval;
+
+            var games = scanner.FindGames();
+            var chosen = GameClassifier.Choose(games.Select(g => g.Candidate).ToList(), currentPid: null);
+            autoGame = games.FirstOrDefault(g => g.Candidate == chosen);
+            if (autoGame != null) Console.WriteLine($"Game found: {autoGame.Candidate.DisplayName} ({autoGame.Candidate.ProcessName})");
+        }
 
         /// <summary>
         /// Manually enable/disable recorder (called from UI)
@@ -780,6 +830,7 @@ namespace ChronoRecorder
             return config.Mode switch
             {
                 RecorderConfig.RecordingMode.Application => "IDLE: Waiting for tracked app...",
+                RecorderConfig.RecordingMode.Auto => "IDLE: Waiting for a game...",
                 _ => "IDLE"
             };
         }
