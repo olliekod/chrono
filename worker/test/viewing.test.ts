@@ -152,6 +152,65 @@ describe("GET /api/clips/:id", () => {
   });
 });
 
+describe("a trailing slash on a link", () => {
+  // A friend's clip was shared as .../watch/ID/ and answered "Not found", so it looked deleted and had no embed.
+  it("still opens the watch page, with the embed tags", async () => {
+    const { id } = await uploadClip(SIZE, { title: "Slash" });
+
+    const res = await api(`/watch/${id}/`);
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(html).toContain(`<meta property="og:video" content="${BASE}/v/${id}.mp4">`);
+    expect(html).toContain("<title>Slash</title>");
+  });
+
+  it("still serves the video, with ranges", async () => {
+    const { id, data } = await uploadClip(SIZE);
+
+    const res = await api(`/v/${id}.mp4/`, { headers: { Range: "bytes=10-19" } });
+
+    expect(res.status).toBe(206);
+    expect(sameBytes(await res.arrayBuffer(), data.slice(10, 20))).toBe(true);
+  });
+
+  it("still answers the metadata request", async () => {
+    const { id } = await uploadClip(SIZE);
+
+    expect((await api(`/api/clips/${id}/`)).status).toBe(200);
+  });
+
+  it("copes with more than one slash, and a link that has a query string", async () => {
+    const { id } = await uploadClip(SIZE);
+
+    expect((await api(`/watch/${id}///`)).status).toBe(200);
+    expect((await api(`/watch/${id}/?utm_source=chat`)).status).toBe(200);
+  });
+
+  it("does not turn a wrong address into a right one", async () => {
+    const { id } = await uploadClip(SIZE);
+
+    expect((await api(`/watch/${id}x/`)).status).toBe(404);
+    expect((await api(`/watch/`)).status).toBe(404);
+    expect((await api(`/nothing/here/`)).status).toBe(404);
+  });
+
+  it("does not open the upload routes any wider: a clip is still only removed or renamed by its owner", async () => {
+    const clip = await uploadClip(SIZE);
+
+    const res = await api(`/api/clips/${clip.id}/`, { method: "DELETE", headers: AUTH });
+
+    expect(res.status).toBe(403);
+    expect((await api(`/watch/${clip.id}`)).status).toBe(200);
+  });
+
+  it("leaves the front page alone", async () => {
+    const res = await api("/");
+    expect(res.status).toBe(200);
+    expect((await res.json<{ name: string }>()).name).toBe("chrono-clips");
+  });
+});
+
 describe("routing", () => {
   it("describes itself at /", async () => {
     const res = await api("/");

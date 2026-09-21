@@ -14,8 +14,18 @@ import {
 
 const methodNotAllowed = (allow: string) => errorResponse(405, "Method not allowed", { Allow: allow });
 
+/**
+ * The path with any slashes on the end removed. A shared link often arrives with one (chat apps, address bars and
+ * copy and paste all add or keep a trailing slash), and "/watch/abc/" means the same page as "/watch/abc": answering
+ * it with "Not found" made a working clip look deleted, and stopped Discord reading the page for its embed.
+ */
+function canonicalPath(pathname: string): string {
+  const trimmed = pathname.replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+}
+
 async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const { pathname } = new URL(request.url);
+  const pathname = canonicalPath(new URL(request.url).pathname);
   const method = request.method;
   let m: RegExpExecArray | null;
 
