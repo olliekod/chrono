@@ -83,6 +83,7 @@ namespace ChronoRecorder
                 ["getSettings"] = GetSettings,
                 ["getRecommendedBitrate"] = GetRecommendedBitrate,
                 ["saveSettings"] = SaveSettings,
+                ["completeOnboarding"] = CompleteOnboarding,
                 ["getAudioDevices"] = GetAudioDevices,
                 ["startMicMeter"] = StartMicMeter,
                 ["stopMicMeter"] = _ => { StopMeter(); return Task.FromResult<object?>(new { }); },
@@ -376,6 +377,34 @@ namespace ChronoRecorder
         }
 
         public void Dispose() => StopMeter();
+
+        /// <summary>
+        /// Ends the first-run setup. Whatever the person filled in is saved; anything left out (they pressed Skip) stays as it
+        /// was, so skipping everything is just an empty request. Nothing is saved if a value isn't valid.
+        /// </summary>
+        private Task<object?> CompleteOnboarding(JObject request)
+        {
+            var candidate = new RecorderConfig();
+            candidate.CopyFrom(config);
+
+            string? username = request.Value<string>("username");
+            string? apiUrl = request.Value<string>("apiUrl");
+            string? uploadKey = request.Value<string>("uploadKey");
+            if (!string.IsNullOrWhiteSpace(username)) candidate.Username = username;
+            if (!string.IsNullOrWhiteSpace(apiUrl)) candidate.ApiUrl = apiUrl;
+            if (!string.IsNullOrWhiteSpace(uploadKey)) candidate.UploadKey = uploadKey;
+
+            string? problem = SettingsRules.ValidateAndTidy(candidate);
+            if (problem != null) throw new InvalidOperationException(problem);
+
+            config.Username = candidate.Username;
+            config.ApiUrl = candidate.ApiUrl;
+            config.UploadKey = candidate.UploadKey;
+            config.OnboardingCompleted = true;
+            saveConfig(config);
+            PushStatus();
+            return Task.FromResult<object?>(new { canUpload = UploadRules.SettingsFrom(config) != null });
+        }
 
         private Task<object?> SaveSettings(JObject request)
         {

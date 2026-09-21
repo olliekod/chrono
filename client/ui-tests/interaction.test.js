@@ -428,6 +428,51 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   await until(() => empty.window.document.querySelector('.empty'), 'empty state');
   check('an empty library explains the hotkey', /Ctrl/.test(empty.window.document.querySelector('.empty').textContent) && /30 seconds/.test(empty.window.document.querySelector('.empty').textContent));
 
+  // ------------------------------------------------------------ first-run setup
+  check('an existing install is not shown the setup', !doc.querySelector('.onboarding'));
+
+  const fresh = await open('?state=onboarding');
+  const fdoc = fresh.window.document;
+  const typeInto = (el, value) => { el.value = value; el.dispatchEvent(new fresh.window.Event('input', { bubbles: true })); };
+  const button = (label) => [...fdoc.querySelectorAll('.onboarding-actions .btn')].find((b) => b.textContent === label);
+  const submit = () => fdoc.querySelector('.onboarding-card').dispatchEvent(new fresh.window.Event('submit', { bubbles: true, cancelable: true }));
+
+  await until(() => fdoc.querySelector('.onboarding'), 'the setup');
+  check('a new install starts with the setup, over the app', /Welcome to Chrono/.test(fdoc.querySelector('.onboarding h1').textContent) && fdoc.getElementById('app').hasAttribute('inert'));
+  check('step 1 asks for a username, and Continue works without one', !!fdoc.querySelector('input[maxlength="32"]') && !button('Continue').disabled && !!button('Skip'));
+  typeInto(fdoc.getElementById('onboarding-input'), 'Pilot');
+  submit();
+  check('step 2 asks for the server address and has a Skip', /Where should clips go/.test(fdoc.querySelector('.onboarding h1').textContent) && !!button('Skip for now') && !!button('Back'));
+  check('Continue waits for an address to be typed', button('Continue').disabled);
+  typeInto(fdoc.getElementById('onboarding-input'), 'http://clips.example.com');
+  submit();
+  check('an address that would send the key in the clear is explained, and stays on the step', /https/.test(fdoc.querySelector('.onboarding [role="alert"]').textContent) && /Where should clips go/.test(fdoc.querySelector('.onboarding h1').textContent));
+  typeInto(fdoc.getElementById('onboarding-input'), 'https://clips.example.workers.dev');
+  check('typing again clears the message', fdoc.querySelector('.onboarding [role="alert"]').textContent === '');
+  submit();
+  check('step 3 asks for the key, hidden as it is typed, with a Skip', /Upload key/.test(fdoc.querySelector('.onboarding h1').textContent) && fdoc.getElementById('onboarding-input').type === 'password' && !!button('Skip for now') && !!button('Finish'));
+  button('Back').click();
+  check('Back returns to the address, still filled in', fdoc.getElementById('onboarding-input').value === 'https://clips.example.workers.dev');
+  submit();
+  typeInto(fdoc.getElementById('onboarding-input'), 'letmein');
+  submit();
+  await until(() => !fdoc.querySelector('.onboarding'), 'the setup to finish');
+  check('finishing saves the name, address and key, and the app is usable again', /Pilot/.test(fdoc.querySelector('.status-panel').textContent) && !fdoc.getElementById('app').hasAttribute('inert'));
+  check('and says it is ready to upload', /Uploads are ready/.test(fdoc.querySelector('.toasts').textContent));
+  const saved = await fresh.window.Chrono.bridge.request('getSettings');
+  check('the settings hold what was entered', saved.config.Username === 'Pilot' && saved.config.ApiUrl === 'https://clips.example.workers.dev' && saved.config.UploadKey === 'letmein');
+
+  // Someone with no server just skips: the address step ends the setup, and nothing else is asked.
+  const bare = await open('?state=onboarding');
+  const bdoc = bare.window.document;
+  await until(() => bdoc.querySelector('.onboarding'), 'the setup again');
+  [...bdoc.querySelectorAll('.onboarding-actions .btn')].find((b) => b.textContent === 'Skip').click();
+  [...bdoc.querySelectorAll('.onboarding-actions .btn')].find((b) => b.textContent === 'Skip for now').click();
+  await until(() => !bdoc.querySelector('.onboarding'), 'the setup to end after skipping the server');
+  const bareSaved = await bare.window.Chrono.bridge.request('getSettings');
+  check('skipping everything saves nothing and asks for no key', bareSaved.config.ApiUrl === '' && bareSaved.config.UploadKey === '' && bareSaved.config.Username === 'username');
+  check('and says how to set up uploading later', /Settings/.test(bdoc.querySelector('.toasts').textContent));
+
   check('no script errors during the whole run', errors.length === 0);
   if (errors.length) console.log(errors.slice(0, 5));
   console.log(`${passed} UI checks passed`);

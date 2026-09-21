@@ -25,7 +25,7 @@ namespace ChronoRecorder
     public sealed record StatusDto(
         bool Enabled, bool Recording, string State, string Headline, string Target, string Mode, string SelectedApplication,
         string Screen, int Fps, string ClipQuality, string Audio, int BufferSeconds, string Username, bool CanUpload,
-        IReadOnlyList<HotkeyDto> Hotkeys, bool ShowDiagnostics, string Version);
+        IReadOnlyList<HotkeyDto> Hotkeys, bool ShowDiagnostics, string Version, bool NeedsOnboarding);
 
     public static class StatusPresenter
     {
@@ -54,7 +54,8 @@ namespace ChronoRecorder
                 Hotkeys: (config.Hotkeys ?? new List<HotkeyConfig>())
                     .Select(h => new HotkeyDto(h.Name, h.Modifiers.Concat(new[] { h.Key }).ToList(), h.ClipLengthSeconds)).ToList(),
                 ShowDiagnostics: config.ShowDiagnostics,
-                Version: DiagnosticsCollector.AppVersion);
+                Version: DiagnosticsCollector.AppVersion,
+                NeedsOnboarding: !config.OnboardingCompleted);
         }
 
         public static string ClipQualityText(string? resolution, int fps)

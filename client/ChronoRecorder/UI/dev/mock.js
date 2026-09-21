@@ -25,7 +25,7 @@
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
     selectedApplication: '', screen: '2560x1440', fps: 60, clipQuality: '1080p60', audio: 'Game sound and microphone', bufferSeconds: 140,
-    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.3',
+    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.3', needsOnboarding: false,
     hotkeys: [
       { name: 'Quick Clip', keys: ['Control', 'PageUp'], seconds: 30 },
       { name: 'Long Clip', keys: ['Control', 'PageDown'], seconds: 120 },
@@ -33,6 +33,7 @@
   };
 
   const state = params.get('state');
+  const blankSetup = state === 'onboarding';
   if (state === 'idle') Object.assign(status, { recording: false, state: 'idle', headline: 'Waiting for a game' });
   if (state === 'paused') Object.assign(status, { enabled: false, recording: false, state: 'paused', headline: 'Paused' });
 
@@ -47,6 +48,12 @@
       { Name: 'Long Clip', Key: 'PageDown', Modifiers: ['Control'], ClipLengthSeconds: 120 },
     ],
   };
+
+  // ?state=onboarding shows the app as a brand new install: nothing set up, and the first-run setup on top.
+  if (blankSetup) {
+    Object.assign(config, { Username: 'username', ApiUrl: '', UploadKey: '', OnboardingCompleted: false });
+    Object.assign(status, { username: 'username', canUpload: false, needsOnboarding: true });
+  }
 
   let meterTimer = 0;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -201,6 +208,15 @@
     },
     copyDiagnostics: async () => ({}),
     openLogsFolder: async () => ({}),
+    completeOnboarding: async ({ username, apiUrl, uploadKey }) => {
+      if (username) config.Username = username;
+      if (apiUrl) config.ApiUrl = apiUrl;
+      if (uploadKey) config.UploadKey = uploadKey;
+      config.OnboardingCompleted = true;
+      Object.assign(status, { needsOnboarding: false, username: config.Username, canUpload: !!(config.ApiUrl && config.UploadKey) });
+      Chrono.bridge.emit('status', copy(status));
+      return { canUpload: status.canUpload };
+    },
     getSettings: async () => ({ config: copy(config), recommended: { kbps: 11000, size: '2560x1440', fps: config.Fps } }),
     getRecommendedBitrate: async ({ fps }) => ({ kbps: Math.round(2560 * 1440 * fps * 0.09 / 500000) * 500, size: '2560x1440', fps }),
     saveSettings: async ({ config: next }) => {

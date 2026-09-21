@@ -164,6 +164,27 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public void SomeoneWhoAlreadyUsedChrono_IsNotWalkedThroughTheSetup()
+        {
+            var updated = new RecorderConfig { ConfigVersion = 2, FirstRunCompleted = true };
+
+            updated.MigrateLegacyValues();
+
+            Assert.True(updated.OnboardingCompleted);
+        }
+
+        [Fact]
+        public void ANewInstall_StillGetsTheSetup_EvenAfterQuittingBeforeFinishing()
+        {
+            // The first launch marks the first run done and saves a file at the current version, without the setup finished.
+            var relaunched = new RecorderConfig { ConfigVersion = RecorderConfig.CurrentConfigVersion, FirstRunCompleted = true, OnboardingCompleted = false };
+
+            relaunched.MigrateLegacyValues();
+
+            Assert.False(relaunched.OnboardingCompleted);
+        }
+
+        [Fact]
         public void AfterThat_TheirChoicesAreLeftAlone()
         {
             var current = new RecorderConfig { Mode = RecorderConfig.RecordingMode.Display, RecorderEnabled = false, ConfigVersion = RecorderConfig.CurrentConfigVersion };

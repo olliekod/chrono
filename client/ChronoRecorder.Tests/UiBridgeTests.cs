@@ -575,6 +575,80 @@ namespace ChronoRecorder.Tests
             Assert.Equal(DiagnosticsCollector.AppVersion, version);
         }
 
+        // ------------------------------------------------------------- first-run setup
+
+        [Fact]
+        public async Task ANewInstall_AsksForTheSetup_UntilItIsFinished()
+        {
+            Assert.True((bool)(await Ok("getStatus"))["needsOnboarding"]!);
+
+            await Ok("completeOnboarding", new { });
+
+            Assert.False((bool)(await Ok("getStatus"))["needsOnboarding"]!);
+            Assert.True(config.OnboardingCompleted);
+            Assert.Equal(1, saves);
+        }
+
+        [Fact]
+        public async Task TheSetup_SavesWhatWasFilledIn()
+        {
+            var reply = await Ok("completeOnboarding", new { username = "  Pilot_7 ", apiUrl = "https://clips.example.workers.dev/", uploadKey = " s3cret " });
+
+            Assert.Equal("Pilot_7", config.Username);
+            Assert.Equal("https://clips.example.workers.dev/", config.ApiUrl);   // stored as typed; NormalizeServerUrl tidies it when it is used
+            Assert.Equal("s3cret", config.UploadKey);
+            Assert.True((bool)reply["canUpload"]!);
+            Assert.NotNull(UploadRules.SettingsFrom(config));
+        }
+
+        [Fact]
+        public async Task SkippingEverything_ChangesNothingButTheFlag()
+        {
+            await Ok("completeOnboarding", new { });
+
+            Assert.Equal("Oliver", config.Username);
+            Assert.Equal("", config.ApiUrl);
+            Assert.Equal("", config.UploadKey);
+            Assert.True(config.OnboardingCompleted);
+        }
+
+        [Fact]
+        public async Task SkippingTheKey_KeepsTheServerAddressForLater()
+        {
+            var reply = await Ok("completeOnboarding", new { apiUrl = "https://clips.example.workers.dev" });
+
+            Assert.Equal("https://clips.example.workers.dev", config.ApiUrl);
+            Assert.False((bool)reply["canUpload"]!);   // no key yet, so nothing can upload
+            Assert.False((bool)(await Ok("getStatus"))["canUpload"]!);
+        }
+
+        [Fact]
+        public async Task ABadServerAddress_IsRefused_AndNothingIsSaved()
+        {
+            string error = await Fails("completeOnboarding", new { username = "Pilot", apiUrl = "http://clips.example.com", uploadKey = "k" });
+
+            Assert.Contains("server address", error);
+            Assert.Equal("Oliver", config.Username);
+            Assert.Equal("", config.UploadKey);
+            Assert.False(config.OnboardingCompleted);
+            Assert.Equal(0, saves);
+        }
+
+        [Fact]
+        public async Task TheSetup_DoesNotDisturbOtherSettings()
+        {
+            config.Fps = 144;
+            config.EncoderLoad = "normal";
+            var hotkeys = config.Hotkeys.Count;
+
+            await Ok("completeOnboarding", new { username = "Pilot" });
+
+            Assert.Equal(144, config.Fps);
+            Assert.Equal("normal", config.EncoderLoad);
+            Assert.Equal(hotkeys, config.Hotkeys.Count);
+            Assert.Equal(0, configSavedCallbacks);   // no hotkey or recording restart is needed
+        }
+
         [Fact]
         public async Task Diagnostics_IsHiddenUntilItIsTurnedOn()
         {

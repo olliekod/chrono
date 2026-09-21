@@ -267,3 +267,20 @@ test('buffer length is the longest hotkey plus two segments', () => {
   assert.equal(C.bufferSeconds([{ ClipLengthSeconds: 30 }, { ClipLengthSeconds: 120 }]), 140);
   assert.equal(C.bufferSeconds([]), 20);
 });
+
+// ------------------------------------------------------------ server address
+
+test('serverAddressProblem accepts what the app accepts', () => {
+  for (const ok of ['https://clips.example.workers.dev', 'clips.example.workers.dev', '  https://clips.example.workers.dev/  ', 'http://localhost:8799', 'http://127.0.0.1:8799/']) {
+    assert.equal(C.serverAddressProblem(ok), '', ok);
+  }
+});
+
+test('serverAddressProblem explains what is wrong', () => {
+  assert.match(C.serverAddressProblem(''), /Enter the address/);
+  assert.match(C.serverAddressProblem('   '), /Enter the address/);
+  assert.match(C.serverAddressProblem('http://clips.example.com'), /https/);
+  assert.match(C.serverAddressProblem('ftp://clips.example.com'), /https/);
+  assert.match(C.serverAddressProblem('https://'), /address/);
+  assert.match(C.serverAddressProblem('https://chrono-clips.fly.dev'), /doesn't exist/);
+});

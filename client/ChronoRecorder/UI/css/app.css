@@ -516,3 +516,22 @@ input.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; heig
 /* the video's volume control */
 input.slider.volume { flex: none; width: 96px; }
 .volume-text { min-width: 40px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------- first-run setup */
+
+.onboarding {
+  position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; overflow-y: auto;
+  background: var(--main); animation: fade 0.18s ease-out;
+}
+.onboarding-card { width: min(480px, 100%); animation: rise 0.18s ease-out; }
+.onboarding-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+.onboarding-logo { width: 40px; height: 40px; display: block; }
+.onboarding-progress { display: flex; gap: 6px; }
+.onboarding-progress i { width: 28px; height: 4px; border-radius: 2px; background: var(--line); }
+.onboarding-progress i.on { background: var(--brand); }
+.onboarding-card h1 { font: 700 26px/1.2 var(--font-display); margin-bottom: 10px; }
+.onboarding-body { color: var(--muted); font-size: 15px; line-height: 1.5; margin-bottom: 26px; }
+.onboarding-card .field { margin-bottom: 30px; }
+.onboarding-card .field .input { max-width: none; height: 44px; font-size: 15px; }
+.onboarding-actions { display: flex; align-items: center; gap: 10px; }
+.onboarding-actions .grow { flex: 1; }

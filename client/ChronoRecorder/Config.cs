@@ -59,8 +59,8 @@ namespace ChronoRecorder
         /// </summary>
         public int ConfigVersion { get; set; } = 0;
 
-        /// <summary>The current generation. 1: the library and automatic recording arrived. 2: game capture became "auto".</summary>
-        public const int CurrentConfigVersion = 2;
+        /// <summary>The current generation. 1: the library and automatic recording arrived. 2: game capture became "auto". 3: the first-run setup arrived.</summary>
+        public const int CurrentConfigVersion = 3;
         public bool RecorderEnabled { get; set; } = true;
         public string SelectedApplication { get; set; } = "";
         public int MinimumFocusTimeSeconds { get; set; } = 2;
@@ -133,6 +133,9 @@ namespace ChronoRecorder
 
         /// <summary>False until the first run has opened the window once; after that Chrono starts in the tray.</summary>
         public bool FirstRunCompleted { get; set; } = false;
+
+        /// <summary>False until the first-run setup (username, server address, upload key) has been finished or skipped.</summary>
+        public bool OnboardingCompleted { get; set; } = false;
         public bool SaveLocalCopy { get; set; } = false;
 
         /// <summary>
@@ -169,6 +172,11 @@ namespace ChronoRecorder
             // Someone who really wants the window on Windows 10 can pick it again in Settings.
             if (ConfigVersion < 2 && string.Equals(GameCapture, "window", StringComparison.OrdinalIgnoreCase))
                 GameCapture = "auto";
+
+            // The setup only exists for people who are new. Someone who has already used Chrono has their settings and
+            // shouldn't be walked through them when they update.
+            if (ConfigVersion < 3 && FirstRunCompleted)
+                OnboardingCompleted = true;
 
             ConfigVersion = CurrentConfigVersion;
 
@@ -244,7 +252,9 @@ namespace ChronoRecorder
 
             var defaultConfig = new RecorderConfig
             {
-                Encoder = detectedEncoder
+                Encoder = detectedEncoder,
+                // Written as current, so the next launch doesn't treat this new install as an old file (and skip the setup).
+                ConfigVersion = RecorderConfig.CurrentConfigVersion
             };
             
             // Set default hotkeys for new config

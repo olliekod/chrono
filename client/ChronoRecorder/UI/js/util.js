@@ -250,6 +250,24 @@
     return longest + 20;
   }
 
+  /**
+   * Why a server address can't be used, or '' when it can. Mirrors UploadRules.NormalizeServerUrl: the upload key is sent
+   * to this address, so plain http is only for the local machine.
+   */
+  function serverAddressProblem(input) {
+    let text = String(input || '').trim();
+    if (!text) return 'Enter the address of your server.';
+    if (!text.includes('://')) text = 'https://' + text;
+    let url;
+    try { url = new URL(text); } catch { return "That doesn't look like an address. It should be like https://your-server.workers.dev."; }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'The address has to start with https://.';
+    if (!url.hostname) return "That doesn't look like an address. It should be like https://your-server.workers.dev.";
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    if (url.protocol === 'http:' && !local) return 'Use an https:// address. Your upload key would be sent in the clear over http.';
+    if (url.hostname.toLowerCase() === 'chrono-clips.fly.dev') return "That server doesn't exist any more. Use the address you were given.";
+    return '';
+  }
+
   /** "2 minutes 20 seconds", "45 seconds". */
   function plainDuration(seconds) {
     const m = Math.floor(seconds / 60);
@@ -263,7 +281,7 @@
   Object.assign(Chrono, {
     h, formatDuration, formatPrecise, formatSize, timeAgo, dateTime, matches, groupClips, gameOptions, filterClips, inRange, isFiltering,
     MIN_TRIM, clamp, moveStart, moveEnd, timeAtX, percentAt, isTrimmed, cleanTitle,
-    hotkeyName, modifiersOf, hotkeyProblem, hotkeyLabel, worksAlone, MAX_KEYS, levelPercent, isLoud, hotkeyParts, bufferSeconds, plainDuration,
+    hotkeyName, modifiersOf, hotkeyProblem, hotkeyLabel, worksAlone, MAX_KEYS, levelPercent, isLoud, hotkeyParts, bufferSeconds, plainDuration, serverAddressProblem,
   });
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Chrono;

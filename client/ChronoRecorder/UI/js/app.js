@@ -118,6 +118,9 @@
     const wanted = (root.location.hash || '').replace('#', '');
     // ?section=hotkeys opens that part of Settings (used when designing the pages)
     go(pages[wanted] ? wanted : 'library', new URLSearchParams(root.location.search).get('section') || undefined);
+
+    // A new install starts with a short setup laid over the app: username, server address, upload key.
+    if (state.status && state.status.needsOnboarding && Chrono.onboarding) Chrono.onboarding.start();
   }
 
   root.document.addEventListener('DOMContentLoaded', boot);
