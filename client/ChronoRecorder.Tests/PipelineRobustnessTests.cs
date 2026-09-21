@@ -130,5 +130,27 @@ namespace ChronoRecorder.Tests
 
             Assert.Contains("-preset ultrafast", CaptureCommand.Build(request));
         }
+
+        // ------------------------------------------------------------ graphics cards
+
+        [Theory]
+        [InlineData("NVIDIA GeForce RTX 4080", "h264_nvenc")]
+        [InlineData("NVIDIA GeForce GTX 1660 Ti", "h264_nvenc")]
+        [InlineData("AMD Radeon RX 7900 XTX", "h264_amf")]
+        [InlineData("Intel(R) UHD Graphics 770", "h264_qsv")]
+        [InlineData("Microsoft Basic Display Adapter", "libx264")]
+        public void EachKindOfGraphicsCardPicksItsEncoder(string adapter, string expected)
+        {
+            Assert.Equal(expected, GpuDetector.Identify(adapter).Encoder);
+        }
+
+        [Fact]
+        public void ALaptopWithTwoGraphicsCards_IsIdentifiedAsBoth()
+        {
+            // Windows lists both, in an order nobody controls, so the chooser has to rank them rather than take
+            // the first. A machine with a real graphics card must never end up on its integrated one.
+            Assert.Equal(GpuDetector.GpuType.Intel, GpuDetector.Identify("Intel(R) Iris(R) Xe Graphics").Type);
+            Assert.Equal(GpuDetector.GpuType.NVIDIA, GpuDetector.Identify("NVIDIA GeForce RTX 4060 Laptop GPU").Type);
+        }
     }
 }

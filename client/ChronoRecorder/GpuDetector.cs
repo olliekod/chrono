@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Management;
 
@@ -30,58 +31,27 @@ namespace ChronoRecorder
         {
             try
             {
-                // Query Windows Management Instrumentation for video controllers
-                using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_VideoController"))
+                // Every display adapter, then the best encoder among them. A laptop usually lists its Intel
+                // graphics as well as its NVIDIA or AMD card, in whatever order WMI feels like, so taking the
+                // first match would hand a machine with a real graphics card the weakest encoder it has.
+                var found = new List<GpuInfo>();
+
+                using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_VideoController"))
                 {
-                    // get each object from win32_videocontroller
                     foreach (ManagementObject obj in searcher.Get())
                     {
-                        // parse
                         string name = obj["Name"]?.ToString() ?? "";
-                        string driverVersion = obj["DriverVersion"]?.ToString() ?? "";
-                        
+                        if (name.Length == 0) continue;
                         Console.WriteLine($"Found GPU: {name}");
-
-                        // Check for nvidia gpu using string comparisons
-                        if (name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) ||
-                            name.Contains("GeForce", StringComparison.OrdinalIgnoreCase) ||
-                            name.Contains("RTX", StringComparison.OrdinalIgnoreCase) ||
-                            name.Contains("GTX", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return new GpuInfo
-                            {
-                                Type = GpuType.NVIDIA,
-                                Name = name,
-                                Encoder = "h264_nvenc"
-                            };
-                        }
-
-                        // Check for AMD gpu through common string comparisons
-                        if (name.Contains("AMD", StringComparison.OrdinalIgnoreCase) ||
-                            name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) ||
-                            name.Contains("RX ", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return new GpuInfo
-                            {
-                                Type = GpuType.AMD,
-                                Name = name,
-                                Encoder = "h264_amf"
-                            };
-                        }
-
-                        // Check for Intel (none of my friends are on integrated so we're chilling but I added for completions sake)
-                        if (name.Contains("Intel", StringComparison.OrdinalIgnoreCase) ||
-                            name.Contains("UHD Graphics", StringComparison.OrdinalIgnoreCase) ||
-                            name.Contains("Iris", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return new GpuInfo
-                            {
-                                Type = GpuType.Intel,
-                                Name = name,
-                                Encoder = "h264_qsv"
-                            };
-                        }
+                        found.Add(Identify(name));
                     }
+                }
+
+                // NVENC first (the only path with a GPU decoder for exports too), then AMD, then Intel.
+                foreach (var type in new[] { GpuType.NVIDIA, GpuType.AMD, GpuType.Intel })
+                {
+                    var match = found.FirstOrDefault(g => g.Type == type);
+                    if (match != null) return match;
                 }
             }
             catch (Exception ex)
@@ -99,6 +69,25 @@ namespace ChronoRecorder
             };
         }
 
+        /// <summary>Which kind of graphics card a Windows adapter name describes, and the encoder it brings.</summary>
+        public static GpuInfo Identify(string name)
+        {
+            if (Mentions(name, "NVIDIA", "GeForce", "RTX", "GTX"))
+                return new GpuInfo { Type = GpuType.NVIDIA, Name = name, Encoder = "h264_nvenc" };
+
+            if (Mentions(name, "AMD", "Radeon", "RX "))
+                return new GpuInfo { Type = GpuType.AMD, Name = name, Encoder = "h264_amf" };
+
+            // None of the friend group is on integrated graphics, but it costs nothing to support.
+            if (Mentions(name, "Intel", "UHD Graphics", "Iris"))
+                return new GpuInfo { Type = GpuType.Intel, Name = name, Encoder = "h264_qsv" };
+
+            return new GpuInfo { Type = GpuType.Unknown, Name = name, Encoder = "libx264" };
+        }
+
+        private static bool Mentions(string name, params string[] words)
+            => words.Any(w => name.Contains(w, StringComparison.OrdinalIgnoreCase));
+
         /// <summary>
         /// verify that FFmpeg supports the detected encoder
         /// </summary>
@@ -106,7 +95,7 @@ namespace ChronoRecorder
         {
             try
             {
-                var process = new System.Diagnostics.Process
+                using var process = new System.Diagnostics.Process
                 {
                     StartInfo = new System.Diagnostics.ProcessStartInfo
                     {
