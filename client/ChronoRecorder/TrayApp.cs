@@ -16,6 +16,9 @@ namespace ChronoRecorder
         private readonly RecorderConfig config;
         private readonly Recorder recorder;
         private readonly HotkeyManager hotkeys;
+        private readonly ClipLibrary library;
+        private readonly ClipMedia media;
+        private readonly Uploader uploader;
         private readonly NotifyIcon icon;
         private readonly Control marshal;   // an invisible control, so other threads can hand work to the UI thread
         private readonly System.Windows.Forms.Timer statusTimer;
@@ -23,17 +26,20 @@ namespace ChronoRecorder
         private readonly ToolStripMenuItem pauseItem = new ToolStripMenuItem();
         private readonly ToolStripMenuItem startupItem = new ToolStripMenuItem("Start with Windows") { CheckOnClick = false };
 
-        private WebViewHost? window;
+        private MainWindow? window;
         private TrayState shownState = (TrayState)(-1);
         private string shownText = "";
 
         public NotifyIcon Icon => icon;
 
-        public TrayApp(RecorderConfig config, Recorder recorder, HotkeyManager hotkeys)
+        public TrayApp(RecorderConfig config, Recorder recorder, HotkeyManager hotkeys, ClipLibrary library, ClipMedia media, Uploader uploader)
         {
             this.config = config;
             this.recorder = recorder;
             this.hotkeys = hotkeys;
+            this.library = library;
+            this.media = media;
+            this.uploader = uploader;
 
             marshal = new Control();
             marshal.CreateControl();
@@ -42,6 +48,7 @@ namespace ChronoRecorder
             icon = new NotifyIcon { Icon = TrayIcons.For(TrayState.Idle), Text = TrayStatus.Tooltip("starting"), Visible = true };
             icon.ContextMenuStrip = BuildMenu();
             icon.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
+            icon.BalloonTipClicked += (s, e) => ShowWindow();   // "Clip saved" opens the library
 
             statusTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             statusTimer.Tick += (s, e) => RefreshStatus();
@@ -73,9 +80,7 @@ namespace ChronoRecorder
             }
 
             Console.WriteLine("Opening the window");
-            var opened = new WebViewHost(config);
-            opened.SetRecorder(recorder);
-            opened.ConfigSaved += OnConfigSaved;
+            var opened = new MainWindow(config, recorder, library, media, uploader, OnConfigSaved);
             opened.FormClosed += (s, e) =>
             {
                 Console.WriteLine("Window closed; freeing its browser");
@@ -85,6 +90,9 @@ namespace ChronoRecorder
             opened.Show();
             opened.Activate();
         }
+
+        /// <summary>A message inside the window, if it is open (a clip was saved by a hotkey, for example).</summary>
+        public void ShowToast(string kind, string title, string? text = null) => Post(() => window?.ShowToast(kind, title, text));
 
         private void OnConfigSaved()
         {

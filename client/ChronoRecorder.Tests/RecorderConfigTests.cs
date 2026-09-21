@@ -148,5 +148,30 @@ namespace ChronoRecorder.Tests
 
             Assert.Equal(10, live.Hotkeys[0].ClipLengthSeconds);
         }
+
+        [Fact]
+        public void AnOldConfig_IsMovedToAutomaticRecordingOnce()
+        {
+            // What the previous version saved: a game picked by hand, and the recorder switched off with its Stop button.
+            var old = new RecorderConfig { Mode = RecorderConfig.RecordingMode.Application, SelectedApplication = "Risk of rain 2", RecorderEnabled = false, ConfigVersion = 0 };
+
+            old.MigrateLegacyValues();
+
+            Assert.Equal(RecorderConfig.RecordingMode.Auto, old.Mode);
+            Assert.True(old.RecorderEnabled);
+            Assert.Equal(RecorderConfig.CurrentConfigVersion, old.ConfigVersion);
+            Assert.Equal("Risk of rain 2", old.SelectedApplication);   // still there if they choose "Pick a game" again
+        }
+
+        [Fact]
+        public void AfterThat_TheirChoicesAreLeftAlone()
+        {
+            var current = new RecorderConfig { Mode = RecorderConfig.RecordingMode.Display, RecorderEnabled = false, ConfigVersion = RecorderConfig.CurrentConfigVersion };
+
+            current.MigrateLegacyValues();
+
+            Assert.Equal(RecorderConfig.RecordingMode.Display, current.Mode);
+            Assert.False(current.RecorderEnabled);
+        }
     }
 }

@@ -14,7 +14,7 @@ namespace ChronoRecorder
     /// Records one monitor with a single long-running FFmpeg process that writes rolling segments,
     /// and saves clips by joining the newest segments.
     /// </summary>
-    public class Recorder
+    public class Recorder : IRecorder
     {
         private readonly RecorderConfig config;
         private readonly SegmentTracker tracker;
@@ -394,6 +394,8 @@ namespace ChronoRecorder
         /// </summary>
         /// <summary>The encoder in use (the configured one, or the best this PC has when set to auto).</summary>
         public string EncoderName => ResolveEncoder();
+
+        public IReadOnlyList<string> RunningApplications() => GetRunningApplications();
 
         private string ResolveEncoder()
         {

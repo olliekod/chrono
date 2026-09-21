@@ -12,7 +12,7 @@ namespace ChronoRecorder
         private static HotkeyManager? hotkeyManager;
         private static Notifier? notifier;
         private static TrayApp? tray;
-        private static readonly Uploader uploader = new Uploader(Uploader.CreateHttpClient());
+        private static ClipLibrary? library;
 
         [STAThread]
         static void Main(string[] args)
@@ -48,8 +48,11 @@ namespace ChronoRecorder
             hotkeyManager.RegisterHotkeys();
             Console.WriteLine();
 
+            library = new ClipLibrary(config);
+            var media = new ClipMedia(config, library, () => recorder.EncoderName);
+
             // Chrono lives in the tray; the window is opened on demand and freed when closed.
-            tray = new TrayApp(config, recorder, hotkeyManager);
+            tray = new TrayApp(config, recorder, hotkeyManager, library, media, new Uploader(Uploader.CreateHttpClient()));
             notifier = new Notifier(config, tray.Icon);
             instance.ListenForShowRequests(tray.RequestShow);
 
@@ -58,6 +61,13 @@ namespace ChronoRecorder
             recorder.Warning += message => OnUiThread(() => notifier?.Error("Chrono", message));
 
             tray.ApplyStartWithWindows();
+
+            // Clips saved before the library existed are picked up, and their lengths read, without holding anything up.
+            Task.Run(() =>
+            {
+                try { library.Refresh(); library.FillMissingDetails(); }
+                catch (Exception ex) { Console.WriteLine($"Couldn't read the clips folder: {ex.Message}"); }
+            });
 
             bool startedInBackground = Array.Exists(args, a => a == AutoStart.BackgroundFlag);
             if (!config.FirstRunCompleted)
@@ -89,79 +99,35 @@ namespace ChronoRecorder
         }
 
         // async void because this is an event handler. It runs on the UI thread, so every await resumes there,
-        // which is what lets it touch the clipboard and tray icon. Nothing may escape the try/catch.
+        // which is what lets it touch the tray icon. Nothing may escape the try/catch.
         private static async void OnHotkeyPressed(object? sender, HotkeyManager.HotkeyPressedEventArgs e)
         {
             try
             {
-                if (recorder == null || !recorder.IsRecordingActive)
+                if (recorder == null || library == null || !recorder.IsRecordingActive)
                 {
-                    notifier?.Error("Chrono", "Not recording. Start the recorder first.");
+                    notifier?.Error("Chrono", "Nothing is being recorded right now. Chrono records games automatically once one is running.");
                     return;
                 }
 
                 Console.WriteLine($"Saving last {e.Hotkey.ClipLengthSeconds} seconds...");
+                string? game = recorder.CurrentGameName;
 
                 // Joining segments spawns FFmpeg; keep the UI responsive while it runs.
                 string clipPath = await Task.Run(() => recorder.SaveClip(e.Hotkey.ClipLengthSeconds, e.Hotkey.Name));
                 Console.WriteLine($"✓ Clip saved: {clipPath}");
 
-                // TODO: Open trim UI here
+                // The clip goes into the library and stays there. Uploading is something you choose to do, from the library.
+                var clip = library.AddSaved(clipPath, game, LibraryIndex.DefaultTitle(game, e.Hotkey.Name, DateTime.Now));
+                _ = Task.Run(() => library.FillMissingDetails());
 
-                await ShareAsync(clipPath);
+                notifier?.Info("Clip saved", $"{clip.Title}\nClick to open it in your library.");
+                tray?.ShowToast("good", "Clip saved", clip.Title);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"✗ Error saving clip: {ex}");
                 notifier?.Error("Couldn't save clip", ex.Message);
-            }
-        }
-
-        /// <summary>Upload a saved clip and put its share link on the clipboard.</summary>
-        private static async Task ShareAsync(string clipPath)
-        {
-            string name = Path.GetFileName(clipPath);
-
-            if (!config.AutoUpload)
-            {
-                notifier?.Info("Clip saved", name);
-                return;
-            }
-
-            var settings = UploadRules.SettingsFrom(config);
-            if (settings == null)
-            {
-                notifier?.Info("Clip saved", $"{name}\nAdd your server address and upload key in Settings to get share links.");
-                return;
-            }
-
-            try
-            {
-                notifier?.Info("Uploading clip...", name);
-
-                // The clip may have been shrunk as it was saved, so read its real size rather than assuming.
-                double? duration = await Task.Run(() => MediaProbe.DurationSeconds(clipPath));
-                string? videoSize = await Task.Run(() => MediaProbe.VideoSizeText(clipPath)) ?? recorder?.CaptureResolution;
-                var info = new ClipInfo(duration, videoSize, config.Fps, BitrateSizing.Resolve(config.Bitrate, videoSize, config.Fps));
-
-                var result = await uploader.UploadAsync(clipPath, settings, info);
-                Console.WriteLine($"✓ Uploaded: {result.Link}");
-
-                if (config.CopyLinkToClipboard)
-                {
-                    // Another app can hold the clipboard for a moment; retry a few times.
-                    Clipboard.SetDataObject(result.Link, true, 5, 100);
-                    notifier?.Info("Link copied", result.Link);
-                }
-                else
-                {
-                    notifier?.Info("Clip uploaded", result.Link);
-                }
-            }
-            catch (UploadException ex)
-            {
-                Console.WriteLine($"✗ Upload failed: {ex.Message}");
-                notifier?.Error("Upload failed", $"{ex.Message}\nYour clip is saved: {name}");
             }
         }
     }

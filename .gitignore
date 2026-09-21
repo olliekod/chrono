@@ -27,3 +27,9 @@ worker/worker-configuration.d.ts
 # Bundled FFmpeg (fetched by scripts/fetch-ffmpeg.ps1) and published builds
 client/ChronoRecorder/ffmpeg/
 dist/
+
+# Local sample pictures for the UI mock (frames from real clips)
+client/ChronoRecorder/UI/dev/samples/
+
+# UI test dependencies
+client/ui-tests/node_modules/

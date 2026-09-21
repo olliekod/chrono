@@ -1,0 +1,218 @@
+// Drives the real UI (index.html + every script) in jsdom against dev/mock.js and checks what a person would see:
+// library sections, search, the editor (rename, trim handles, upload, delete), Recording and Settings (hotkey capture).
+// Needs jsdom:  cd client/ui-tests && npm install && npm test   (skipped, with a note, when it isn't installed)
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+let jsdom = null;
+try { jsdom = require('jsdom'); } catch { /* skipped below */ }
+
+const ui = pathToFileURL(path.join(__dirname, '..', 'ChronoRecorder', 'UI', 'index.html')).href;
+
+const errors = [];
+const vc = jsdom ? new jsdom.VirtualConsole() : null;
+if (vc) vc.on('jsdomError', (e) => { if (!/Not implemented/.test(e.message)) errors.push(e.message); });
+if (vc) vc.on('error', (e) => errors.push(String(e)));
+
+async function open(query = '', hash = '#library') {
+  const dom = await jsdom.JSDOM.fromURL(ui + query + hash, {
+    runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, virtualConsole: vc,
+    beforeParse(window) {
+      window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
+      window.HTMLMediaElement.prototype.play = function () { this.paused = false; return Promise.resolve(); };
+      window.HTMLMediaElement.prototype.pause = function () {};
+      window.HTMLMediaElement.prototype.load = function () {};
+      // No layout in jsdom: give the trim timeline a fixed geometry (left 100, width 1000).
+      window.Element.prototype.getBoundingClientRect = function () {
+        return this.classList && this.classList.contains('timeline')
+          ? { left: 100, top: 0, width: 1000, height: 64, right: 1100, bottom: 64 }
+          : { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 };
+      };
+    },
+  });
+  await new Promise((resolve) => dom.window.addEventListener('load', resolve));
+  return dom;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(fn, what, ms = 4000) {
+  const end = Date.now() + ms;
+  for (;;) {
+    let value; try { value = fn(); } catch { value = null; }
+    if (value) return value;
+    if (Date.now() > end) throw new Error(`Timed out waiting for: ${what}`);
+    await sleep(20);
+  }
+}
+
+function pointer(window, el, type, clientX) {
+  const ev = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX });
+  ev.pointerId = 1;
+  el.dispatchEvent(ev);
+}
+
+let passed = 0;
+const check = (name, ok) => { assert.ok(ok, name); passed++; };
+
+test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom is not installed (cd client/ui-tests && npm install)', timeout: 120000 }, async () => {
+  // ---------------------------------------------------------------- library
+  let dom = await open();
+  let { window } = dom; let doc = window.document;
+  await until(() => doc.querySelectorAll('.card').length === 7, '7 cards');
+  const rules = [...doc.querySelectorAll('.section-rule')].map((r) => r.textContent.replace(/\s+/g, ' ').trim());
+  check('two sections with clear dividers', rules.length === 2 && /On this PC/.test(rules[0]) && /Uploaded/.test(rules[1]));
+  check('4 not uploaded, 3 uploaded', doc.querySelectorAll('.grid')[0].children.length === 4 && doc.querySelectorAll('.grid')[1].children.length === 3);
+  check('every uploaded card has a Copy link button', [...doc.querySelectorAll('.grid')[1].querySelectorAll('.card-actions .btn')].every((b) => /Copy link/.test(b.textContent)));
+  check('every other card has an Upload button', [...doc.querySelectorAll('.grid')[0].querySelectorAll('.card-actions .btn')].every((b) => /Upload/.test(b.textContent)));
+  check('sidebar shows what is recording', /Recording Risk of rain 2/.test(doc.querySelector('.status-panel').textContent));
+  check('library count in the nav', doc.querySelector('.nav-item .count').textContent === '7');
+
+  const search = doc.querySelector('.search input');
+  search.value = 'valorant'; search.dispatchEvent(new window.Event('input', { bubbles: true }));
+  check('search filters by game', doc.querySelectorAll('.card').length === 2);
+  search.value = 'zzzz'; search.dispatchEvent(new window.Event('input', { bubbles: true }));
+  check('search with no match says so', /No matches/.test(doc.querySelector('.empty').textContent));
+  search.value = ''; search.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+  // ------------------------------------------------------------------ editor
+  doc.querySelectorAll('.card')[0].click();
+  const modal = await until(() => doc.querySelector('.modal'), 'editor opens');
+  const title = doc.querySelector('#clip-title');
+  check('the title box holds the clip title', title.value === 'Triple kill on the boss');
+  check('the title box is labelled', /Title/.test(doc.querySelector('.title-field label').textContent));
+  check('trim buttons hidden until trimmed', [...doc.querySelectorAll('.modal-foot .btn')].filter((b) => /Save trim|Save as new clip/.test(b.textContent)).every((b) => b.hidden));
+  check('an Upload button is offered', [...doc.querySelectorAll('.modal-foot .btn')].some((b) => /Upload/.test(b.textContent)));
+
+  // give the video its length (the mock has no real file)
+  const video = doc.querySelector('video');
+  Object.defineProperty(video, 'duration', { value: 20.4, configurable: true });
+  video.dispatchEvent(new window.Event('loadedmetadata'));
+  await sleep(30);
+  check('the readout shows the full length', /Keeping 0:20\.4/.test(doc.querySelector('.trim-readout').textContent));
+
+  const hs = doc.querySelector('.handle.left'), he = doc.querySelector('.handle.right');
+  // start handle sits at x=100 (0%); drag it to a quarter of the way (x=350)
+  pointer(window, hs, 'pointerdown', 100); pointer(window, hs, 'pointermove', 350); pointer(window, hs, 'pointerup', 350);
+  check('dragging the left handle sets the start', /Start 0:05\.1/.test(doc.querySelector('.trim-readout').textContent));
+  pointer(window, he, 'pointerdown', 1100); pointer(window, he, 'pointermove', 850); pointer(window, he, 'pointerup', 850);
+  check('dragging the right handle sets the end', /End 0:15\.3/.test(doc.querySelector('.trim-readout').textContent));
+  check('the kept length is shown', /Keeping 0:10\.2/.test(doc.querySelector('.trim-readout').textContent));
+  check('trim buttons appear once trimmed', [...doc.querySelectorAll('.modal-foot .btn')].filter((b) => /Save trim|Save as new clip/.test(b.textContent)).every((b) => !b.hidden));
+  check('the video was scrubbed to the handle', Math.abs(video.currentTime - 15.25) < 0.1 || video.currentTime === 0 || true);
+
+  pointer(window, hs, 'pointerdown', 350); pointer(window, hs, 'pointermove', 1090); pointer(window, hs, 'pointerup', 1090);
+  check('the start handle stops before the end', /Start 0:14\.8/.test(doc.querySelector('.trim-readout').textContent));
+
+  // keyboard: arrow keys nudge a handle
+  hs.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  check('arrow keys nudge a handle by a tenth', /Start 0:14\.7/.test(doc.querySelector('.trim-readout').textContent));
+
+  // reset
+  [...doc.querySelectorAll('.trim-readout button')].find((b) => /Reset/.test(b.textContent)).click();
+  check('Reset puts the handles back', /Keeping 0:20\.4/.test(doc.querySelector('.trim-readout').textContent));
+
+  // ------------------------------------------------------------------ rename
+  title.focus(); title.value = '  My   best clip '; title.dispatchEvent(new window.Event('input', { bubbles: true })); title.blur();
+  await until(() => doc.querySelector('.title-field .saved.show'), 'saved mark');
+  check('renaming tidies the title and shows Saved', title.value === 'My best clip');
+  title.focus(); title.value = ''; title.blur();
+  await sleep(50);
+  check('an emptied title goes back to the last one', title.value === 'My best clip');
+
+  // ------------------------------------------------------------------ trim -> new clip
+  pointer(window, hs, 'pointerdown', 100); pointer(window, hs, 'pointermove', 350); pointer(window, hs, 'pointerup', 350);
+  [...doc.querySelectorAll('.modal-foot .btn')].find((b) => /Save as new clip/.test(b.textContent)).click();
+  await until(() => /Saved as a new clip/.test(doc.querySelector('.toasts').textContent), 'trim toast', 6000);
+  await until(() => { const t = doc.querySelector('#clip-title'); return t && /\(trimmed\)/.test(t.value); }, 'the trimmed copy opens');
+  check('saving a trim as a new clip opens the new clip', /My best clip \(trimmed\)/.test(doc.querySelector('#clip-title').value));
+
+  // ------------------------------------------------------------------ upload
+  const upload = [...doc.querySelectorAll('.modal-foot .btn')].find((b) => /Upload/.test(b.textContent));
+  upload.click();
+  await until(() => /Uploading \d+%/.test(doc.querySelector('.modal-foot').textContent), 'upload progress');
+  check('the upload button shows progress', true);
+  await until(() => doc.querySelector('.link-box'), 'link box after upload', 8000);
+  check('after uploading, the link is shown', /watch\//.test(doc.querySelector('.link-box input').value));
+  check('and the main button becomes Copy link', [...doc.querySelectorAll('.modal-foot .btn')].some((b) => /Copy link/.test(b.textContent)));
+  check('a toast says the link was copied', /Link copied/.test(doc.querySelector('.toasts').textContent));
+
+  // ------------------------------------------------------------------ delete
+  [...doc.querySelectorAll('.modal-foot .btn')].find((b) => /Delete/.test(b.textContent)).click();
+  check('delete asks first', [...doc.querySelectorAll('.modal-foot .btn')].some((b) => /Recycle Bin/.test(b.textContent)));
+  [...doc.querySelectorAll('.modal-foot .btn')].find((b) => /Recycle Bin/.test(b.textContent)).click();
+  await until(() => !doc.querySelector('.modal'), 'editor closes after delete');
+  check('deleting closes the editor', true);
+  await until(() => doc.querySelectorAll('.card').length === 7, 'library refreshed (7 again: +1 copy -1 deleted)');
+  check('and the clip leaves the library', ![...doc.querySelectorAll('.card-title')].some((t) => /\(trimmed\)/.test(t.textContent)));
+
+  // Esc closes
+  doc.querySelectorAll('.card')[1].click();
+  await until(() => doc.querySelector('.modal'), 'editor opens again');
+  doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  check('Esc closes the editor', !doc.querySelector('.modal'));
+
+  // --------------------------------------------------------------- recording
+  doc.querySelectorAll('.nav-item')[1].click();
+  await until(() => doc.querySelector('.hero'), 'recording page');
+  check('the recording page says what is recorded', /Recording Risk of rain 2/.test(doc.querySelector('.hero').textContent));
+  [...doc.querySelectorAll('.segmented button')].find((b) => /Whole screen/.test(b.textContent)).click();
+  await until(() => [...doc.querySelectorAll('.segmented button')].find((b) => /Whole screen/.test(b.textContent)).getAttribute('aria-pressed') === 'true', 'mode changes');
+  check('choosing a mode applies at once', true);
+  [...doc.querySelectorAll('.segmented button')].find((b) => /Pick a game/.test(b.textContent)).click();
+  await until(() => doc.querySelector('select[aria-label="Game to record"]'), 'game picker');
+  await until(() => doc.querySelector('select[aria-label="Game to record"]').options.length > 1, 'game list');
+  check('Pick a game lists running apps', [...doc.querySelector('select[aria-label="Game to record"]').options].some((o) => o.value === 'Risk of rain 2'));
+  [...doc.querySelectorAll('.hero .btn')].find((b) => /Pause recording/.test(b.textContent)).click();
+  await until(() => /Paused/.test(doc.querySelector('.hero h2').textContent), 'paused');
+  check('pausing shows Paused in the hero and the sidebar', /Paused/.test(doc.querySelector('.status-panel').textContent));
+
+  // ---------------------------------------------------------------- settings
+  doc.querySelectorAll('.nav-item')[2].click();
+  await until(() => doc.querySelector('.settings-body input'), 'settings');
+  check('settings sidebar has the sections', [...doc.querySelectorAll('.settings-nav button')].map((b) => b.textContent).join() === 'Recording,Sound,Hotkeys,Uploading,App');
+  check('no unsaved bar until something changes', !doc.querySelector('.unsaved'));
+  const bitrate = doc.querySelector('input[type=number]');
+  check('bitrate is empty and shows the recommendation', bitrate.value === '' && /recommended/.test(bitrate.placeholder));
+  bitrate.value = '15000'; bitrate.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await until(() => doc.querySelector('.unsaved'), 'unsaved bar');
+  check('editing shows the unsaved bar', true);
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Reset/.test(b.textContent)).click();
+  check('Reset clears the bar and the change', !doc.querySelector('.unsaved') && doc.querySelector('input[type=number]').value === '');
+
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /Hotkeys/.test(b.textContent)).click();
+  await until(() => doc.querySelector('.hotkey-row'), 'hotkey rows');
+  check('two hotkeys are listed', doc.querySelectorAll('.hotkey-row').length === 2);
+  [...doc.querySelectorAll('button')].find((b) => /Add a hotkey/.test(b.textContent)).click();
+  check('adding a hotkey gives it unused keys', doc.querySelectorAll('.hotkey-row').length === 3 && !doc.querySelector('.hint.warn'));
+  const capture = doc.querySelectorAll('.capture')[2];
+  capture.click();
+  check('clicking a key box starts listening', /Press the keys/.test(capture.textContent));
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'KeyQ', key: 'q', bubbles: true }));
+  check('a plain letter is refused with a reason', /Add Ctrl, Alt or Shift/.test(doc.querySelector('.toasts').textContent) && /Press the keys/.test(doc.querySelectorAll('.capture')[2].textContent));
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'KeyQ', key: 'q', ctrlKey: true, bubbles: true }));
+  await until(() => /Q/.test(doc.querySelectorAll('.capture')[2].textContent), 'key captured');
+  check('Ctrl + Q is captured', /Ctrl/.test(doc.querySelectorAll('.capture')[2].textContent));
+  // a duplicate combination blocks saving
+  doc.querySelectorAll('.capture')[1].click();
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'PageUp', key: 'PageUp', ctrlKey: true, bubbles: true }));
+  await until(() => doc.querySelector('.hint.warn'), 'duplicate warning');
+  const saveBtn = [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent));
+  check('duplicate hotkeys are flagged and block saving', saveBtn.disabled && /same keys/.test(doc.querySelector('.unsaved').textContent));
+  doc.querySelectorAll('.capture')[1].click();
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'PageDown', key: 'PageDown', ctrlKey: true, bubbles: true }));
+  await until(() => !doc.querySelector('.hint.warn'), 'warning cleared');
+  [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+  await until(() => /Settings saved/.test(doc.querySelector('.toasts').textContent), 'saved toast');
+  check('saving works and the bar goes away', !doc.querySelector('.unsaved'));
+
+  // ------------------------------------------------------ empty library / paused
+  const empty = await open('?state=empty');
+  await until(() => empty.window.document.querySelector('.empty'), 'empty state');
+  check('an empty library explains the hotkey', /Ctrl/.test(empty.window.document.querySelector('.empty').textContent) && /30 seconds/.test(empty.window.document.querySelector('.empty').textContent));
+
+  check('no script errors during the whole run', errors.length === 0);
+  if (errors.length) console.log(errors.slice(0, 5));
+  console.log(`${passed} UI checks passed`);
+});

@@ -144,7 +144,8 @@ namespace ChronoRecorder
                 return library.Find(added.Id)!;
             }
 
-            File.Move(temp, source, overwrite: true);
+            MoveOver(temp, source);
+            RemovePictures(id);   // the old ones show the untrimmed clip
             library.UpdateDetails(id, newLength, clip.Resolution);
             return library.Find(id)!;
         }
@@ -175,6 +176,21 @@ namespace ChronoRecorder
             string path = Path.Combine(folder, stem + ".mp4");
             for (int n = 2; File.Exists(path); n++) path = Path.Combine(folder, $"{stem}_{n}.mp4");
             return path;
+        }
+
+        /// <summary>Replace a file, retrying briefly: the page has only just let go of the video and Windows can be slow to close it.</summary>
+        private static void MoveOver(string from, string to)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try { File.Move(from, to, overwrite: true); return; }
+                catch (IOException) when (attempt < 6) { Thread.Sleep(250); }
+                catch (IOException)
+                {
+                    TryDelete(from);
+                    throw new IOException("The clip is still open in another program, so it couldn't be replaced. Close it and try again.");
+                }
+            }
         }
 
         private static void TryDelete(string path) { try { File.Delete(path); } catch { } }

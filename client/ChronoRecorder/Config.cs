@@ -42,6 +42,15 @@ namespace ChronoRecorder
         }
         
         public RecordingMode Mode { get; set; } = RecordingMode.Auto;
+
+        /// <summary>
+        /// Which generation of settings this file is. Old files have no value (0) and are brought up to date once by
+        /// <see cref="MigrateLegacyValues"/>.
+        /// </summary>
+        public int ConfigVersion { get; set; } = 0;
+
+        /// <summary>The current generation. 1: the library and automatic recording arrived.</summary>
+        public const int CurrentConfigVersion = 1;
         public bool RecorderEnabled { get; set; } = true;
         public string SelectedApplication { get; set; } = "";
         public int MinimumFocusTimeSeconds { get; set; } = 2;
@@ -78,7 +87,10 @@ namespace ChronoRecorder
         /// <summary>Trim a constant audio/video offset, in milliseconds (positive delays the sound). Normally 0.</summary>
         public int AudioDelayMs { get; set; } = 0;
 
-        public bool AutoUpload { get; set; } = true;
+        /// <summary>Not used any more: clips are saved to the library and only uploaded when you choose. Kept so old config files load.</summary>
+        public bool AutoUpload { get; set; } = false;
+
+        /// <summary>Not used any more: a link is copied when you upload or press Copy link. Kept so old config files load.</summary>
         public bool CopyLinkToClipboard { get; set; } = true;
         public bool ShowNotifications { get; set; } = true;
 
@@ -109,6 +121,15 @@ namespace ChronoRecorder
             // The old default pointed at a server nobody here owns; never send clips or keys there.
             if (ApiUrl != null && ApiUrl.Contains("chrono-clips.fly.dev", StringComparison.OrdinalIgnoreCase))
                 ApiUrl = "";
+
+            // Before the library and automatic recording, the recorder had an on/off button and a game to pick. Someone
+            // who last pressed Stop would otherwise find the new, automatic Chrono doing nothing. Done once.
+            if (ConfigVersion < CurrentConfigVersion)
+            {
+                RecorderEnabled = true;
+                Mode = RecordingMode.Auto;
+                ConfigVersion = CurrentConfigVersion;
+            }
 
             // 8000 used to be the default for everyone; it was too little for 1440p and was never a choice.
             if (Bitrate == BitrateSizing.LegacyDefaultKbps)

@@ -1,0 +1,7 @@
+{
+  "name": "chrono-ui-tests",
+  "private": true,
+  "description": "Tests for the Chrono window UI (pure helpers and a jsdom run of the whole page against the dev mock)",
+  "scripts": { "test": "node --test util.test.js interaction.test.js" },
+  "devDependencies": { "jsdom": "^29.1.1" }
+}
