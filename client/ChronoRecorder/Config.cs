@@ -231,13 +231,12 @@ namespace ChronoRecorder
                 if (File.Exists(ConfigPath))
                 {
                     var json = File.ReadAllText(ConfigPath);
-                    
+
                     Console.WriteLine("=== LOADING CONFIG ===");
                     Console.WriteLine($"JSON length: {json.Length} characters");
-                    
-                    var config = JsonConvert.DeserializeObject<RecorderConfig>(json);
-                    config.MigrateLegacyValues();
-                    
+
+                    var config = Parse(json);
+
                     Console.WriteLine($"Loaded config with {config.Hotkeys.Count} hotkeys:");
                     foreach (var hotkey in config.Hotkeys)
                     {
@@ -270,6 +269,21 @@ namespace ChronoRecorder
 
             Save(defaultConfig);
             return defaultConfig;
+        }
+
+        /// <summary>
+        /// Turns a config file's text into a config: migrated, and with default hotkeys filled in if the file didn't have
+        /// any. A file saved by Chrono always has them (<see cref="Save"/> fills them in before writing), but a file from
+        /// a much older version, or one edited by hand, might not, and without this, a missing "Hotkeys" crashed the load
+        /// (the very next line reads its Count) and, caught by <see cref="Load"/>, replaced the whole file, upload key
+        /// included, with a fresh default one, with nothing to say so.
+        /// </summary>
+        public static RecorderConfig Parse(string json)
+        {
+            var config = JsonConvert.DeserializeObject<RecorderConfig>(json) ?? throw new JsonException("The config file has no data.");
+            config.MigrateLegacyValues();
+            config.SetDefaultHotkeys();
+            return config;
         }
 
         public static void Save(RecorderConfig config)

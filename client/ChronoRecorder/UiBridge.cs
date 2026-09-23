@@ -394,7 +394,9 @@ namespace ChronoRecorder
             if (!string.IsNullOrWhiteSpace(apiUrl)) candidate.ApiUrl = apiUrl;
             if (!string.IsNullOrWhiteSpace(uploadKey)) candidate.UploadKey = uploadKey;
 
-            string? problem = SettingsRules.ValidateAndTidy(candidate);
+            // Only the three fields the setup asks about are checked. Whatever else is already sitting in the config
+            // (untouched here) is none of the setup's business, and Skip must always be able to finish it.
+            string? problem = SettingsRules.ValidateUploadFields(candidate);
             if (problem != null) throw new InvalidOperationException(problem);
 
             config.Username = candidate.Username;

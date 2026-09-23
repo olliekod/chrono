@@ -621,6 +621,19 @@ namespace ChronoRecorder.Tests
         }
 
         [Fact]
+        public async Task TheSetup_IgnoresBadValuesElsewhereInTheConfig_SoSkipAlwaysWorks()
+        {
+            // Something already wrong in the file that has nothing to do with the setup: a hand-edited Fps, say.
+            // The old ValidateAndTidy checked the whole config, so this would have refused even Skip.
+            config.Fps = 999;
+
+            await Ok("completeOnboarding", new { });
+
+            Assert.True(config.OnboardingCompleted);
+            Assert.Equal(999, config.Fps);   // left exactly as it was; the setup only ever touches its own three fields
+        }
+
+        [Fact]
         public async Task SkippingTheKey_KeepsTheServerAddressForLater()
         {
             var reply = await Ok("completeOnboarding", new { apiUrl = "https://clips.example.workers.dev" });
@@ -919,6 +932,34 @@ namespace ChronoRecorder.Tests
 
         [Fact]
         public void TheDefaultSettingsAreValid() => Assert.Null(SettingsRules.ValidateAndTidy(Valid()));
+
+        [Fact]
+        public void ValidateUploadFields_ChecksOnlyUsernameAddressAndKey()
+        {
+            // A bad Fps elsewhere in the config must not stop the first-run setup from saving a good address: Skip has
+            // to always work, whatever else is already sitting in the file.
+            var c = new RecorderConfig { Username = " Pilot ", ApiUrl = "https://clips.example.workers.dev/", UploadKey = " key ", Fps = 999 };
+
+            Assert.Null(SettingsRules.ValidateUploadFields(c));
+            Assert.Equal("Pilot", c.Username);
+            Assert.Equal("https://clips.example.workers.dev/", c.ApiUrl);   // NormalizeServerUrl only checks it here; ApiUrl is stored as typed
+            Assert.Equal("key", c.UploadKey);
+            Assert.Equal(999, c.Fps);   // untouched: not this method's business
+        }
+
+        [Fact]
+        public void ValidateUploadFields_RejectsABadAddress()
+        {
+            var c = new RecorderConfig { Username = "Pilot", ApiUrl = "not an address" };
+            Assert.Contains("server address", SettingsRules.ValidateUploadFields(c));
+        }
+
+        [Fact]
+        public void ValidateUploadFields_AcceptsEverythingBlank()
+        {
+            // Blank means "not set up yet", not "invalid".
+            Assert.Null(SettingsRules.ValidateUploadFields(new RecorderConfig { Username = "", ApiUrl = "", UploadKey = "" }));
+        }
 
         [Fact]
         public void AnEmptyServerAddressIsFine_ItJustMeansNoUploading()

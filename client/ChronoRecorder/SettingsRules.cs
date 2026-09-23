@@ -16,8 +16,13 @@ namespace ChronoRecorder
         private static readonly string[] Encoders = { "auto", "h264_nvenc", "h264_amf", "h264_qsv", "libx264" };
         private static readonly string[] EncoderLoads = { "auto", "autofps", "normal", "light" };
 
-        /// <summary>Tidies the values that can be tidied (trimming, name length) and returns a message for the first thing wrong, or null.</summary>
-        public static string? ValidateAndTidy(RecorderConfig c)
+        /// <summary>
+        /// Tidies and checks just the upload fields: username, server address, key. Its own method because the first-run
+        /// setup only ever touches these three and must not fail over some unrelated field already sitting in the config
+        /// (a hand-edited value, or one an older version left in a shape a newer one no longer accepts) - Skip has to
+        /// always work.
+        /// </summary>
+        public static string? ValidateUploadFields(RecorderConfig c)
         {
             c.Username = (c.Username ?? "").Trim();
             if (c.Username.Length > 32) c.Username = c.Username.Substring(0, 32);
@@ -26,6 +31,15 @@ namespace ChronoRecorder
 
             if (c.ApiUrl.Length > 0 && UploadRules.NormalizeServerUrl(c.ApiUrl).Length == 0)
                 return "That server address isn't valid. Use an https:// address like https://your-server.workers.dev.";
+
+            return null;
+        }
+
+        /// <summary>Tidies the values that can be tidied (trimming, name length) and returns a message for the first thing wrong, or null.</summary>
+        public static string? ValidateAndTidy(RecorderConfig c)
+        {
+            string? uploadProblem = ValidateUploadFields(c);
+            if (uploadProblem != null) return uploadProblem;
 
             if (c.MicrophoneVolumePercent < 0 || c.MicrophoneVolumePercent > 500) return "The microphone volume must be between 0% and 500%.";
             c.SpeakerDeviceId = (c.SpeakerDeviceId ?? "").Trim();
