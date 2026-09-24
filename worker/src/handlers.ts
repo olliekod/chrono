@@ -1,10 +1,10 @@
 import { isAuthorized } from "./auth";
-import { countView, deleteClip, findClip, findReadyClip, insertClip, markReady, setTitle } from "./db";
+import { countView, deleteClip, findClip, findReadyClip, insertClip, insertDiagnosticsReport, listDiagnosticsReports, markReady, setTitle } from "./db";
 import { renderWatchPage, watchPageCsp } from "./html";
 import { isClipId, newClipId } from "./ids";
 import { carriesOwnerToken, hashOwnerToken, newOwnerToken } from "./owner";
 import { parseRange } from "./range";
-import { MAX_PARTS, parseCompletion, parseNewClip, parseTitle } from "./validate";
+import { MAX_DIAGNOSTICS_REPORT_LENGTH, MAX_PARTS, parseCompletion, parseDiagnosticsReport, parseNewClip, parseTitle } from "./validate";
 
 export class HttpError extends Error {
   constructor(
@@ -26,7 +26,7 @@ export function errorResponse(status: number, message: string, headers: HeadersI
 const MAX_JSON_BYTES = 16 * 1024;
 
 /** Reads a small JSON body without trusting Content-Length, so a chunked upload can't fill memory. */
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request, maxBytes = MAX_JSON_BYTES): Promise<unknown> {
   const chunks: Uint8Array[] = [];
   let total = 0;
 
@@ -36,7 +36,7 @@ async function readJson(request: Request): Promise<unknown> {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_JSON_BYTES) {
+      if (total > maxBytes) {
         await reader.cancel();
         throw new HttpError(413, "Request body too large");
       }
@@ -264,6 +264,40 @@ export async function watchPage(request: Request, env: Env, ctx: ExecutionContex
       "Referrer-Policy": "no-referrer",
       "Cache-Control": "no-cache",
     },
+  });
+}
+
+// ------------------------------------------------------------- diagnostics
+
+/**
+ * POST /api/diagnostics: store a diagnostics report someone chose to send (Settings > App > Send a diagnostics report
+ * when you save a clip). Plain text, capped well above what a real report runs to; never touches R2.
+ */
+export async function submitDiagnostics(request: Request, env: Env): Promise<Response> {
+  const denied = await requireAuth(request, env);
+  if (denied) return denied;
+
+  // A little over the cap in bytes, so a report right at the character limit isn't rejected as a body-size problem
+  // before validate.ts gets to give the real reason.
+  const parsed = parseDiagnosticsReport(await readJson(request, MAX_DIAGNOSTICS_REPORT_LENGTH + 4 * 1024));
+  if (!parsed.ok) return errorResponse(parsed.status, parsed.error);
+
+  const id = newClipId();
+  await insertDiagnosticsReport(env.DB, id, parsed.value.owner, parsed.value.clipFilename, parsed.value.report);
+  return json({ id }, 201);
+}
+
+/** GET /api/diagnostics: the most recent reports, newest first. For whoever runs the server, not the app. */
+export async function listDiagnostics(request: Request, env: Env): Promise<Response> {
+  const denied = await requireAuth(request, env);
+  if (denied) return denied;
+
+  const limitParam = Number(new URL(request.url).searchParams.get("limit") ?? "50");
+  const limit = Number.isInteger(limitParam) && limitParam > 0 && limitParam <= 200 ? limitParam : 50;
+
+  const { results } = await listDiagnosticsReports(env.DB, limit);
+  return json({
+    reports: results.map((r) => ({ id: r.id, owner: r.owner, clipFilename: r.clip_filename, report: r.report, createdAt: r.created_at })),
   });
 }
 

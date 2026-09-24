@@ -59,3 +59,29 @@ export async function deleteClip(db: D1Database, id: string): Promise<void> {
 export async function countView(db: D1Database, id: string): Promise<void> {
   await db.prepare("UPDATE clips SET views = views + 1 WHERE id = ?").bind(id).run();
 }
+
+export interface DiagnosticsRow {
+  id: string;
+  owner: string;
+  clip_filename: string | null;
+  report: string;
+  created_at: string;
+}
+
+export async function insertDiagnosticsReport(
+  db: D1Database,
+  id: string,
+  owner: string,
+  clipFilename: string | null,
+  report: string,
+): Promise<void> {
+  await db
+    .prepare("INSERT INTO diagnostics_reports (id, owner, clip_filename, report) VALUES (?, ?, ?, ?)")
+    .bind(id, owner, clipFilename, report)
+    .run();
+}
+
+/** Newest first, capped at `limit` (the caller has already validated it's in range). */
+export function listDiagnosticsReports(db: D1Database, limit: number): Promise<D1Result<DiagnosticsRow>> {
+  return db.prepare("SELECT * FROM diagnostics_reports ORDER BY created_at DESC LIMIT ?").bind(limit).run<DiagnosticsRow>();
+}

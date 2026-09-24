@@ -15,7 +15,7 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, CheckForUpdates: true };
+  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, CheckForUpdates: true, SendDiagnosticsOnClip: false };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
@@ -287,6 +287,7 @@
       field('Upload key', key, 'The secret your server checks before it accepts a clip. Ask whoever set the server up.'),
       field('Username', textInput(config.Username, (v) => { config.Username = v; }, { maxlength: 32 }),
         'Shown as the owner of links you share. Only letters, numbers, - and _ are kept.'),
+      toggle('Send a diagnostics report when you save a clip', 'The same report as Diagnostics\' Copy button (your PC and Chrono\'s performance, not gameplay), sent to your server so whoever runs it can help if something looks wrong. Needs the server address and key above.', config.SendDiagnosticsOnClip === true, (v) => { config.SendDiagnosticsOnClip = v; }),
     ];
   }
 
@@ -296,7 +297,7 @@
       toggle('Start Chrono with Windows', 'Chrono stays in the tray and records games on its own. It has no overlay.', config.StartWithWindows !== false, (v) => { config.StartWithWindows = v; }),
       toggle('Show notifications', 'A small message when a clip is saved or something needs your attention.', config.ShowNotifications !== false, (v) => { config.ShowNotifications = v; }),
       toggle('Show Diagnostics', 'Adds a Diagnostics page to the sidebar with live performance numbers and a report you can copy. Handy when something isn\'t working.', config.ShowDiagnostics === true, (v) => { config.ShowDiagnostics = v; }),
-      toggle('Check for updates', 'Chrono asks GitHub roughly once a day whether a newer version is out, and tells you if one is. Nothing downloads until you say so.', config.CheckForUpdates !== false, (v) => { config.CheckForUpdates = v; }),
+      toggle('Check for updates', 'Chrono asks GitHub roughly once an hour whether a newer version is out, and tells you if one is. Nothing downloads until you say so.', config.CheckForUpdates !== false, (v) => { config.CheckForUpdates = v; }),
       updatesField(),
       h('div', { class: 'field', style: { marginTop: '22px' } }, h('label', { text: 'Clips folder' }),
         h('div', { class: 'selectable', style: { marginBottom: '8px', overflowWrap: 'anywhere' }, text: config.OutputFolder }),
@@ -306,9 +307,13 @@
 
   /** "Check for updates" button plus, once one turns up, "Update now" right beside it. */
   function updatesField() {
-    const known = Chrono.state && Chrono.state.status && Chrono.state.status.updateAvailable;
+    const knownStatus = Chrono.state && Chrono.state.status;
+    const known = knownStatus && knownStatus.updateAvailable;
+    let releaseUrl = knownStatus && knownStatus.updateReleaseUrl;
+
     const status = h('span', { class: 'hint', style: { margin: '0' }, text: known ? `Chrono ${known} is available.` : '' });
     const checkBtn = h('button', { class: 'btn', type: 'button', text: 'Check for updates' });
+    const notesBtn = h('button', { class: 'btn', type: 'button', text: 'See patch notes', hidden: !known || !releaseUrl });
     const updateBtn = h('button', { class: 'btn primary', type: 'button', text: 'Update now', hidden: !known });
 
     checkBtn.addEventListener('click', async () => {
@@ -316,12 +321,15 @@
       status.textContent = 'Checking...';
       try {
         const result = await bridge.request('checkForUpdates');
+        releaseUrl = result.releaseUrl;
         if (result.updateAvailable) {
           status.textContent = `Chrono ${result.updateAvailable} is available.`;
           updateBtn.hidden = false;
+          notesBtn.hidden = !releaseUrl;
         } else {
           status.textContent = "You're on the latest version.";
           updateBtn.hidden = true;
+          notesBtn.hidden = true;
         }
       } catch {
         status.textContent = "Couldn't check for updates. Check your connection.";
@@ -330,11 +338,12 @@
       }
     });
 
+    notesBtn.addEventListener('click', () => { if (releaseUrl) window.open(releaseUrl, '_blank'); });
     updateBtn.addEventListener('click', () => startInstall(updateBtn, status));
 
     return h('div', { class: 'field' },
       h('label', { text: 'Updates' }),
-      h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' } }, checkBtn, updateBtn, status));
+      h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' } }, checkBtn, notesBtn, updateBtn, status));
   }
 
   /** Downloads and launches the installer; Chrono closes itself a moment after. Shared by the Settings button and the
@@ -358,6 +367,14 @@
   }
 
   Chrono.startInstall = startInstall;
+
+  /** The toast/notification buttons for a found update: patch notes (if we know where they are) plus Update now. */
+  Chrono.updateActions = function updateActions(releaseUrl, onUpdate) {
+    const actions = [];
+    if (releaseUrl) actions.push({ label: 'See patch notes', dismiss: false, onClick: () => window.open(releaseUrl, '_blank') });
+    actions.push({ label: 'Update now', onClick: onUpdate });
+    return actions;
+  };
 
   const BUILDERS = { recording: recordingSection, audio: audioSection, hotkeys: hotkeysSection, upload: uploadSection, app: appSection };
 

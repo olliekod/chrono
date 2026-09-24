@@ -40,7 +40,7 @@ Chrono was built and measured on an RTX 4080. It has not been run on a GTX 1650 
 
 Diagnostics is off by default so the sidebar stays simple. Turn it on with **Settings > App > Show Diagnostics** and a **Diagnostics** page appears in the sidebar. It shows what Chrono is doing and what it costs while a game is recorded: the capture method, encoder, resolution and frame rate, bitrate, how much footage is buffered, processor and memory use, how busy the graphics card's video encoder and 3D engine are, encoding speed, dropped frames, and details of your PC. It also lists anything that looks wrong, in plain words.
 
-Press **Copy report** to put it on your clipboard as text you can paste into a chat. The report has no name, folders, server address or key in it. Chrono never sends it anywhere by itself.
+Press **Copy report** to put it on your clipboard as text you can paste into a chat. The report has no name, folders, server address or key in it. Chrono never sends it anywhere by itself, unless you turn on **Settings > Uploading > Send a diagnostics report when you save a clip**, which sends this same report to your Chrono server every time a hotkey saves one, for whoever runs the server to look at. It needs a server address and key the same as uploading does, and it's off until you turn it on.
 
 ## Install
 
@@ -52,7 +52,7 @@ FFmpeg and everything else Chrono needs is inside the installer. It runs on Wind
 
 To update, run the new `Chrono-Setup.exe` over the old one. You don't need to uninstall first. The installer closes Chrono if it is running, replaces the program files, and leaves your clips and settings alone.
 
-Chrono also checks for a newer version itself, roughly once a day, and shows the version at the top left as a button once one is out. Clicking it downloads the installer and runs it for you; Chrono closes so it can update, and you click through the same installer as above. Nothing downloads on its own. Turn this off in **Settings > App > Check for updates** if you'd rather update by hand.
+Chrono also checks for a newer version itself, roughly once an hour, and shows the version at the top left as a button once one is out. Clicking it downloads the installer and runs it for you; Chrono closes so it can update, and you click through the same installer as above. Nothing downloads on its own. Turn this off in **Settings > App > Check for updates** if you'd rather update by hand.
 
 If you prefer no installer, `Chrono-win-x64.zip` on the same page is a portable copy. Unzip it anywhere and run `ChronoRecorder.exe`.
 

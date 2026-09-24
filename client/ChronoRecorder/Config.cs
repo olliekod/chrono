@@ -134,6 +134,13 @@ namespace ChronoRecorder
         /// <summary>Ask GitHub, roughly once a day, whether a newer Chrono has been released. Off means no request is ever made.</summary>
         public bool CheckForUpdates { get; set; } = true;
 
+        /// <summary>
+        /// Send a diagnostics report to the configured server every time a hotkey saves a clip. Off by default: it's
+        /// hardware and software details, not gameplay, but it still leaves this PC, so it's opt-in like everything
+        /// that uploads anything. Needs a server address and key the same as uploading a clip does.
+        /// </summary>
+        public bool SendDiagnosticsOnClip { get; set; } = false;
+
         /// <summary>False until the first run has opened the window once; after that Chrono starts in the tray.</summary>
         public bool FirstRunCompleted { get; set; } = false;
 

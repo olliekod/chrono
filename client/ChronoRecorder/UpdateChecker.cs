@@ -14,8 +14,12 @@ namespace ChronoRecorder
         /// <summary>Give the app a moment to finish starting before the first check.</summary>
         public static readonly TimeSpan FirstCheckDelay = TimeSpan.FromSeconds(30);
 
-        /// <summary>How often after that. A friend-group tool has no need to poll more than daily.</summary>
-        public static readonly TimeSpan CheckEvery = TimeSpan.FromHours(24);
+        /// <summary>
+        /// How often after that. GitHub's unauthenticated rate limit is 60 requests an hour per IP, so this could go
+        /// much tighter than it does; an hour is just a reasonable default for how often a small friend-group tool
+        /// actually ships. The "Check for updates" button in Settings > App checks right away, regardless of this.
+        /// </summary>
+        public static readonly TimeSpan CheckEvery = TimeSpan.FromHours(1);
 
         private readonly RecorderConfig config;
         private readonly GitHubUpdater updater;

@@ -14,6 +14,8 @@ namespace ChronoRecorder
         private static TrayApp? tray;
         private static ClipLibrary? library;
         private static UpdateChecker? updateChecker;
+        private static DiagnosticsCollector? diagnosticsForSending;
+        private static readonly DiagnosticsSender diagnosticsSender = new(DiagnosticsSender.CreateHttpClient());
 
         [STAThread]
         static void Main(string[] args)
@@ -43,6 +45,7 @@ namespace ChronoRecorder
 
             recorder = new Recorder(config);
             recorder.StartMonitoring();
+            diagnosticsForSending = new DiagnosticsCollector(recorder);
 
             hotkeyManager = new HotkeyManager(config);
             hotkeyManager.HotkeyPressed += OnHotkeyPressed;
@@ -104,6 +107,29 @@ namespace ChronoRecorder
             Console.WriteLine("Chrono exited");
         }
 
+        /// <summary>
+        /// "Send a diagnostics report when you save a clip", run off the UI thread so a slow or failed request never
+        /// delays the clip-saved toast that already happened. Silent on success (logged only) and on failure (this is
+        /// a background convenience, not something to interrupt a game over); Settings and the server's own listing
+        /// are how someone actually confirms it is working.
+        /// </summary>
+        private static async Task SendDiagnosticsReport(string clipFilename)
+        {
+            var settings = UploadRules.SettingsFrom(config);
+            if (settings == null || diagnosticsForSending == null) return;
+
+            try
+            {
+                string report = await Task.Run(diagnosticsForSending.Report);
+                await diagnosticsSender.SendAsync(settings, report, clipFilename);
+                Console.WriteLine($"✓ Diagnostics report sent ({clipFilename})");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ Couldn't send the diagnostics report: {ex.Message}");
+            }
+        }
+
         private static void OnUiThread(Action action)
         {
             if (tray != null) tray.Post(action);
@@ -136,6 +162,8 @@ namespace ChronoRecorder
 
                 notifier?.Info("Clip saved", $"{clip.Title}\nClick to open it in your library.");
                 tray?.ShowToast("good", "Clip saved", clip.Title);
+
+                if (config.SendDiagnosticsOnClip) _ = Task.Run(() => SendDiagnosticsReport(Path.GetFileName(clipPath)));
             }
             catch (Exception ex)
             {

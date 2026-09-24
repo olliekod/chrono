@@ -25,8 +25,9 @@
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
     selectedApplication: '', screen: '2560x1440', fps: 60, clipQuality: '1080p60', audio: 'Game sound and microphone', bufferSeconds: 140,
-    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.6', needsOnboarding: false,
+    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.7', needsOnboarding: false,
     updateAvailable: params.get('update') ? '1.1.6' : null,
+    updateReleaseUrl: params.get('update') ? 'https://github.com/olliekod/chrono/releases/tag/v1.1.6' : null,
     hotkeys: [
       { name: 'Quick Clip', keys: ['Control', 'PageUp'], seconds: 30 },
       { name: 'Long Clip', keys: ['Control', 'PageDown'], seconds: 120 },
@@ -43,7 +44,7 @@
     Encoder: 'auto', Mode: 2, RecorderEnabled: true, SelectedApplication: '', OutputFolder: 'C:\\Users\\Player\\Videos\\Chrono',
     TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0,
     GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
-    FirstRunCompleted: true, ShowDiagnostics: false, CheckForUpdates: true,
+    FirstRunCompleted: true, ShowDiagnostics: false, CheckForUpdates: true, SendDiagnosticsOnClip: false,
     Hotkeys: [
       { Name: 'Quick Clip', Key: 'PageUp', Modifiers: ['Control'], ClipLengthSeconds: 30 },
       { Name: 'Long Clip', Key: 'PageDown', Modifiers: ['Control'], ClipLengthSeconds: 120 },
@@ -211,8 +212,9 @@
     openLogsFolder: async () => ({}),
     checkForUpdates: async () => {
       status.updateAvailable = params.get('noupdate') ? null : '1.1.6';
+      status.updateReleaseUrl = status.updateAvailable ? 'https://github.com/olliekod/chrono/releases/tag/v1.1.6' : null;
       Chrono.bridge.emit('status', copy(status));
-      return { updateAvailable: status.updateAvailable };
+      return { updateAvailable: status.updateAvailable, releaseUrl: status.updateReleaseUrl };
     },
     installUpdate: async () => {
       if (!status.updateAvailable) throw new Error('No update is ready to install. Check for updates first.');

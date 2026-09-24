@@ -320,6 +320,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('the chosen microphone is kept', doc.querySelector('select[aria-label="Microphone"]').value === 'm2');
   [...doc.querySelectorAll('.settings-nav button')].find((b) => /Uploading/.test(b.textContent)).click();
   check('the uploading page calls it Username', [...doc.querySelectorAll('.field > label')].some((l) => l.textContent === 'Username') && ![...doc.querySelectorAll('label')].some((l) => l.textContent === 'Your name'));
+  check('uploading offers to send a diagnostics report on every clip, off by default', /Send a diagnostics report/.test(doc.querySelector('.settings-body').textContent) && !doc.querySelector('input[aria-label^="Send a diagnostics report"]').checked);
 
   [...doc.querySelectorAll('.settings-nav button')].find((b) => /Hotkeys/.test(b.textContent)).click();
   await until(() => doc.querySelector('.hotkey-row'), 'hotkey rows');
@@ -374,7 +375,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
 
   // ------------------------------------------------------------------ diagnostics
   const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
-  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.6' && /Chrono/.test(doc.querySelector('.brand').textContent));
+  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.7' && /Chrono/.test(doc.querySelector('.brand').textContent));
   check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
   [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
   await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');
@@ -482,6 +483,10 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   pill.click();
   await until(() => /Update now/.test(udoc.querySelector('.toasts').textContent), 'the update toast');
   check('clicking it offers to update, explaining Chrono will close', /Chrono will close/.test(udoc.querySelector('.toasts').textContent));
+  check('the toast also offers to see what changed', [...udoc.querySelectorAll('.toasts .btn')].some((b) => /See patch notes/.test(b.textContent)));
+  udoc.defaultView.open = () => null;   // jsdom has no real window.open; just check it doesn't throw
+  [...udoc.querySelectorAll('.toasts .btn')].find((b) => /See patch notes/.test(b.textContent)).click();
+  check('and clicking it does not throw or replace the toast', /Update now/.test(udoc.querySelector('.toasts').textContent));
   [...udoc.querySelectorAll('.toasts .btn')].find((b) => /Update now/.test(b.textContent)).click();
   await until(() => /Starting the installer/.test(udoc.querySelector('.toasts').textContent), 'the starting toast');
   check('confirming starts the install and says Chrono will close', true);
@@ -492,6 +497,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   [...u2doc.querySelectorAll('.settings-nav button')].find((b) => /^App$/.test(b.textContent)).click();
   await until(() => u2doc.querySelector('input[aria-label="Check for updates"]'), 'the App section');
   check('Settings already knows an update is available, without a fresh check', /1\.1\.6/.test(u2doc.querySelector('.field .hint').textContent) && !u2doc.querySelector('.field .btn.primary').hidden);
+  check('and offers to see the patch notes too', [...u2doc.querySelectorAll('.field .btn')].some((b) => b.textContent === 'See patch notes' && !b.hidden));
   const noneDoc = (await open('?noupdate=1', '#settings')).window.document;
   await until(() => noneDoc.querySelector('.settings-nav button'), 'settings again');
   [...noneDoc.querySelectorAll('.settings-nav button')].find((b) => /^App$/.test(b.textContent)).click();

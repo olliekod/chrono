@@ -52,6 +52,14 @@ namespace ChronoRecorder
         private readonly GitHubUpdater updateDownloader;
         private readonly Action<string> launchInstaller;
 
+        /// <summary>
+        /// How long InstallUpdate waits after launching the installer before asking the host to exit. Long enough for
+        /// the "Starting the installer" toast to register before the tray icon vanishes; the installer's own wizard
+        /// needs a further click before it does anything that cares whether Chrono is still running (see
+        /// DEVELOPMENT.md). Tests set this to zero so they don't wait on the real clock.
+        /// </summary>
+        public TimeSpan ExitDelay { get; set; } = TimeSpan.FromMilliseconds(1500);
+
         private readonly Dictionary<string, Func<JObject, Task<object?>>> handlers;
         private readonly HashSet<string> uploading = new();
         private MicMeter? meter;
@@ -159,7 +167,7 @@ namespace ChronoRecorder
 
         public void PushStatus() => PushEvent("status", Status());
 
-        public StatusDto Status() => StatusPresenter.Build(config, recorder, updates?.Latest?.Version);
+        public StatusDto Status() => StatusPresenter.Build(config, recorder, updates?.Latest?.Version, updates?.Latest?.ReleaseUrl);
 
         // ------------------------------------------------------------------ library
 
@@ -464,7 +472,7 @@ namespace ChronoRecorder
         {
             var release = updates == null ? null : await updates.CheckAsync();
             PushStatus();
-            return new { updateAvailable = release?.Version };
+            return new { updateAvailable = release?.Version, releaseUrl = release?.ReleaseUrl };
         }
 
         /// <summary>
@@ -482,7 +490,7 @@ namespace ChronoRecorder
                 release.SetupDownloadUrl, new Progress<double>(f => PushEvent("updateProgress", new { fraction = f })));
 
             launchInstaller(path);
-            _ = Task.Delay(1500).ContinueWith(_ => host.RequestExit());
+            _ = Task.Delay(ExitDelay).ContinueWith(_ => host.RequestExit());
 
             return new { };
         }

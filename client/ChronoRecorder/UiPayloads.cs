@@ -25,11 +25,11 @@ namespace ChronoRecorder
     public sealed record StatusDto(
         bool Enabled, bool Recording, string State, string Headline, string Target, string Mode, string SelectedApplication,
         string Screen, int Fps, string ClipQuality, string Audio, int BufferSeconds, string Username, bool CanUpload,
-        IReadOnlyList<HotkeyDto> Hotkeys, bool ShowDiagnostics, string Version, bool NeedsOnboarding, string? UpdateAvailable);
+        IReadOnlyList<HotkeyDto> Hotkeys, bool ShowDiagnostics, string Version, bool NeedsOnboarding, string? UpdateAvailable, string? UpdateReleaseUrl);
 
     public static class StatusPresenter
     {
-        public static StatusDto Build(RecorderConfig config, IRecorder recorder, string? updateAvailable = null)
+        public static StatusDto Build(RecorderConfig config, IRecorder recorder, string? updateAvailable = null, string? updateReleaseUrl = null)
         {
             var (state, headline) = TrayStatus.Describe(
                 config.RecorderEnabled, recorder.IsRecordingActive, config.Mode, recorder.TargetName, config.SelectedApplication);
@@ -56,7 +56,8 @@ namespace ChronoRecorder
                 ShowDiagnostics: config.ShowDiagnostics,
                 Version: DiagnosticsCollector.AppVersion,
                 NeedsOnboarding: config.NeedsOnboarding,
-                UpdateAvailable: updateAvailable);
+                UpdateAvailable: updateAvailable,
+                UpdateReleaseUrl: updateReleaseUrl);
         }
 
         public static string ClipQualityText(string? resolution, int fps)

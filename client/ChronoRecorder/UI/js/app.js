@@ -14,12 +14,15 @@
 
   let toastHost;
 
-  /** A short message in the corner. kind: 'good' | 'error' | 'warn' | undefined. action: { label, onClick }. */
+  /** A short message in the corner. kind: 'good' | 'error' | 'warn' | undefined. action: { label, onClick, dismiss },
+   * or an array of those for more than one button. dismiss (default true) closes the toast after the click; a "peek
+   * at something else" action like seeing patch notes sets it false so the other buttons are still there after. */
   Chrono.toast = function toast(kind, title, text, action) {
     if (!toastHost) return;
+    const actions = !action ? [] : Array.isArray(action) ? action : [action];
     const item = h('div', { class: `toast ${kind || ''}`, role: kind === 'error' ? 'alert' : 'status' },
       h('div', { class: 'msg' }, h('b', { text: title }), text ? h('span', { text }) : null),
-      action ? h('button', { class: 'btn small', onClick: () => { action.onClick(); item.remove(); } }, action.label) : null,
+      ...actions.map((a) => h('button', { class: 'btn small', onClick: () => { a.onClick(); if (a.dismiss !== false) item.remove(); } }, a.label)),
       h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', onClick: () => item.remove() }, icon('x')));
     toastHost.append(item);
     const life = kind === 'error' ? 9000 : 4500;
@@ -111,7 +114,7 @@
     const s = state.status;
     if (!s || !s.updateAvailable || !Chrono.startInstall) return;
     Chrono.toast('good', `Chrono ${s.updateAvailable} is available`, 'Chrono will close and the installer will open.',
-      { label: 'Update now', onClick: () => Chrono.startInstall(versionLabel) });
+      Chrono.updateActions(s.updateReleaseUrl, () => Chrono.startInstall(versionLabel)));
   }
 
   async function boot() {

@@ -5,9 +5,11 @@ import {
   createClip,
   errorResponse,
   json,
+  listDiagnostics,
   removeClip,
   renameClip,
   serveVideo,
+  submitDiagnostics,
   uploadPart,
   watchPage,
 } from "./handlers";
@@ -41,12 +43,20 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         remove: "DELETE /api/clips/:id",
         watch: "GET /watch/:id",
         video: "GET /v/:id.mp4",
+        submitDiagnostics: "POST /api/diagnostics",
+        listDiagnostics: "GET /api/diagnostics",
       },
     });
   }
 
   if (pathname === "/api/clips") {
     return method === "POST" ? createClip(request, env) : methodNotAllowed("POST");
+  }
+
+  if (pathname === "/api/diagnostics") {
+    if (method === "POST") return submitDiagnostics(request, env);
+    if (method === "GET") return listDiagnostics(request, env);
+    return methodNotAllowed("GET, POST");
   }
 
   if ((m = /^\/api\/clips\/([^/]+)\/parts\/([^/]+)$/.exec(pathname))) {

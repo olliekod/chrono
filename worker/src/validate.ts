@@ -107,6 +107,34 @@ export function parseNewClip(input: unknown, maxBytes: number): Parsed<NewClip> 
   };
 }
 
+export const MAX_DIAGNOSTICS_REPORT_LENGTH = 20_000;   // the report is a few KB of plain text; this is a generous cap, not a target
+
+export interface NewDiagnosticsReport {
+  owner: string;
+  clipFilename: string | null;
+  report: string;
+}
+
+/** {"username": ..., "clipFilename": ...?, "report": ...}: what the app sends when someone saves a clip with "Send a diagnostics report" on. */
+export function parseDiagnosticsReport(input: unknown): Parsed<NewDiagnosticsReport> {
+  if (!isRecord(input)) return bad("Expected a JSON object");
+
+  const { username, clipFilename, report } = input;
+
+  if (typeof username !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(username)) {
+    return bad("username must be 1-32 letters, digits, _ or -");
+  }
+
+  if (typeof report !== "string" || report.trim().length === 0) return bad("report must be a non-empty string");
+  if (report.length > MAX_DIAGNOSTICS_REPORT_LENGTH) return bad(`report must be at most ${MAX_DIAGNOSTICS_REPORT_LENGTH} characters`);
+
+  if (clipFilename !== undefined && clipFilename !== null && typeof clipFilename !== "string") {
+    return bad("clipFilename must be a string");
+  }
+
+  return { ok: true, value: { owner: username, clipFilename: (clipFilename as string | undefined) ?? null, report } };
+}
+
 export function parseCompletion(input: unknown): Parsed<{ parts: CompletedPart[] }> {
   if (!isRecord(input) || !Array.isArray(input.parts)) return bad("Expected {\"parts\": [...]}");
   if (input.parts.length > MAX_PARTS) return bad("Too many parts");

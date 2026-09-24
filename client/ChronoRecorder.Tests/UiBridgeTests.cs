@@ -73,6 +73,18 @@ namespace ChronoRecorder.Tests
             return (string)reply["error"]!;
         }
 
+        /// <summary>Polls a condition that becomes true on some other continuation, instead of sleeping a fixed, and
+        /// either flaky or needlessly slow, amount of time.</summary>
+        private static async Task WaitFor(Func<bool> condition, int timeoutMs = 2000)
+        {
+            var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (!condition())
+            {
+                if (DateTime.UtcNow > deadline) throw new TimeoutException("Condition was never met.");
+                await Task.Delay(5);
+            }
+        }
+
         /// <summary>Paths <see cref="BridgeWithUpdates"/>'s fake launcher was asked to start, instead of really starting
         /// a downloaded file as a process.</summary>
         private readonly List<string> launchedInstallers = new();
@@ -86,7 +98,7 @@ namespace ChronoRecorder.Tests
             var media = new ClipMedia(config, library, () => "h264_nvenc", Path.Combine(root, "thumbs_updates"));
             return new UiBridge(config, recorder, library, media, new Uploader(new HttpClient(http)) { RetryDelay = _ => TimeSpan.Zero },
                 host, () => refusedHotkeys, _ => saves++, updates: checker, updateDownloader: githubHttp,
-                launchInstaller: launchedInstallers.Add);
+                launchInstaller: launchedInstallers.Add) { ExitDelay = TimeSpan.Zero };
         }
 
         private const string OwnerToken = "tok_0123456789abcdefghijklmnopqrstuvwxyzABCDE";
@@ -626,7 +638,10 @@ namespace ChronoRecorder.Tests
             var data = await Ok("checkForUpdates", on: updateBridge);
 
             Assert.Equal("1.1.6", (string?)data["updateAvailable"]);
-            Assert.Equal("1.1.6", (string?)(await Ok("getStatus", on: updateBridge))["updateAvailable"]);
+            Assert.Equal("https://github.com/olliekod/chrono/releases", (string?)data["releaseUrl"]);
+            var status = await Ok("getStatus", on: updateBridge);
+            Assert.Equal("1.1.6", (string?)status["updateAvailable"]);
+            Assert.Equal("https://github.com/olliekod/chrono/releases", (string?)status["updateReleaseUrl"]);
         }
 
         [Fact]
@@ -653,8 +668,7 @@ namespace ChronoRecorder.Tests
             Assert.Equal(fake.InstallerBytes, await File.ReadAllBytesAsync(launchedInstallers[0]));
             try { File.Delete(launchedInstallers[0]); } catch { }
 
-            await Task.Delay(1700);   // InstallUpdate asks the host to exit a moment after launching the installer
-            Assert.Equal(1, host.ExitRequests);
+            await WaitFor(() => host.ExitRequests == 1);   // ExitDelay is zero in tests, but the exit still happens on a continuation
         }
 
         [Fact]
@@ -689,7 +703,7 @@ namespace ChronoRecorder.Tests
             await Ok("checkForUpdates", on: updateBridge);
 
             await Fails("installUpdate", on: updateBridge);
-            await Task.Delay(200);
+            await Task.Delay(50);   // give a wrongly-scheduled exit request a moment to show up, if there were one
 
             Assert.Equal(0, host.ExitRequests);
         }
