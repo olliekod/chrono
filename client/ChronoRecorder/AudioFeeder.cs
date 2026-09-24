@@ -57,6 +57,9 @@ namespace ChronoRecorder
         private long pendingBytes;
         private long framesWritten;
 
+        /// <summary>Seconds-since-T0 span to silence in the recording, or null. Guarded by <see cref="gate"/>.</summary>
+        private (double Start, double End)? muteWindow;
+
         /// <summary>True once the first write has gone through, meaning FFmpeg is reading the pipe.</summary>
         public bool Consuming { get; private set; }
 
@@ -82,6 +85,18 @@ namespace ChronoRecorder
             delayFrames = (long)(delay.TotalSeconds * sampleRate);
         }
 
+        /// <summary>
+        /// Silences the recording (not the live device: this only touches what gets written to FFmpeg) from now
+        /// until <paramref name="duration"/> later. For a sound Chrono itself plays through the same output this
+        /// feeder is capturing, so it is heard but never recorded - see <see cref="ClipCue"/>. The window is in this
+        /// feeder's own clock, so it stays correct however delivery is currently running behind or ahead.
+        /// </summary>
+        public void MuteFromNow(TimeSpan duration)
+        {
+            var now = clock();
+            lock (gate) muteWindow = (now.TotalSeconds, (now + duration).TotalSeconds);
+        }
+
         /// <summary>Sound the device just delivered. Safe to call from the capture thread.</summary>
         public void Push(byte[] buffer, int count)
         {
@@ -94,6 +109,8 @@ namespace ChronoRecorder
 
             lock (gate)
             {
+                if (muteWindow is { } window) Silence(copy, arrivedAt.TotalSeconds, window);
+
                 pending.Enqueue(new Chunk(copy, arrivedAt));
                 pendingBytes += count;
 
@@ -104,6 +121,28 @@ namespace ChronoRecorder
         }
 
         public void Push(byte[] buffer) => Push(buffer, buffer.Length);
+
+        /// <summary>
+        /// Zeroes whatever part of this chunk falls inside the mute window (silence is all-zero bytes in both PCM16
+        /// and float32, so this needs no format-specific handling), and forgets the window once the stream has moved
+        /// entirely past it. Called with <see cref="gate"/> already held.
+        /// </summary>
+        private void Silence(byte[] data, double chunkEndSeconds, (double Start, double End) window)
+        {
+            int frames = data.Length / bytesPerFrame;
+            double chunkStartSeconds = chunkEndSeconds - (double)frames / sampleRate;
+
+            double overlapStart = Math.Max(chunkStartSeconds, window.Start);
+            double overlapEnd = Math.Min(chunkEndSeconds, window.End);
+            if (overlapEnd > overlapStart)
+            {
+                int startFrame = Math.Max(0, (int)Math.Round((overlapStart - chunkStartSeconds) * sampleRate));
+                int endFrame = Math.Min(frames, (int)Math.Round((overlapEnd - chunkStartSeconds) * sampleRate));
+                if (endFrame > startFrame) Array.Clear(data, startFrame * bytesPerFrame, (endFrame - startFrame) * bytesPerFrame);
+            }
+
+            if (chunkStartSeconds >= window.End) muteWindow = null;
+        }
 
         /// <summary>Runs until cancelled or the pipe closes. Blocks; call it on its own thread.</summary>
         public void Run(CancellationToken ct)

@@ -115,6 +115,9 @@ namespace ChronoRecorder
         /// <summary>A short chime when a hotkey saves a clip, so you know it worked without looking.</summary>
         public bool PlaySoundOnClip { get; set; } = true;
 
+        /// <summary>Play the minion sound instead of the usual chime. Just for fun.</summary>
+        public bool MinionMode { get; set; } = false;
+
         /// <summary>Trim a constant audio/video offset, in milliseconds (positive delays the sound). Normally 0.</summary>
         public int AudioDelayMs { get; set; } = 0;
 

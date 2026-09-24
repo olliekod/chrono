@@ -15,7 +15,7 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, CheckForUpdates: true, SendDiagnosticsOnClip: false };
+  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, CheckForUpdates: true, SendDiagnosticsOnClip: false, MinionMode: false };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
@@ -182,6 +182,7 @@
       h('div', { class: 'field' }, h('label', { text: 'Microphone volume' }), h('div', { class: 'slider-row' }, volume, volumeText), meter,
         h('div', { class: 'hint', text: 'Quiet microphone? Raise this. It is applied to clips only, not to your Windows settings. Anything that would go past full scale is limited so it never crackles.' })),
       toggle('Play a sound when a clip is saved', 'A short chime so you know your hotkey worked without looking.', config.PlaySoundOnClip !== false, (v) => { config.PlaySoundOnClip = v; }),
+      toggle('Minion mode', 'Replaces the chime above with a minion sound. Just for fun. Either way, it never ends up in the clip itself.', config.MinionMode === true, (v) => { config.MinionMode = v; }),
     ];
     setTimeout(syncMeter, 0);   // after the page is on screen
     return nodes;

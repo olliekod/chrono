@@ -613,6 +613,25 @@ namespace ChronoRecorder
             Task.Run(StopRecording);
         }
 
+        /// <summary>Extra silence around the chime's own length, to cover WASAPI's startup latency (the sound isn't
+        /// actually audible for a beat after Play() is called) and leave its tail a clean decay instead of a hard cut.</summary>
+        private static readonly TimeSpan ClipCueMuteMargin = TimeSpan.FromMilliseconds(150);
+
+        /// <summary>
+        /// Keeps the clip-save chime (or, in Minion mode, its replacement) out of the recording: mutes the
+        /// system-sound capture - never the microphone, which never picks it up directly - for <paramref name="soundDuration"/>
+        /// plus a margin, starting now. Does nothing if nothing is recording, or system sound isn't being captured.
+        /// The sound itself still plays normally; only what gets written to the recording is affected.
+        /// </summary>
+        public void MuteForClipCue(TimeSpan soundDuration)
+        {
+            List<AudioCapture> audio;
+            lock (processLock) audio = audioCaptures.ToList();
+
+            foreach (var capture in audio)
+                if (capture.Source == AudioSource.SystemSound) capture.MuteBriefly(soundDuration + ClipCueMuteMargin);
+        }
+
         /// <summary>Everything the Diagnostics page shows about the recording.</summary>
         public RecorderFacts GetFacts()
         {

@@ -49,6 +49,11 @@ namespace ChronoRecorder
         /// <summary>Feed sound in directly, as if the device had captured it. For tests and diagnostics.</summary>
         public void PushForDiagnostics(byte[] buffer) => feeder.Push(buffer, buffer.Length);
 
+        /// <summary>Silences this capture's contribution to the recording for a short window starting now, without
+        /// touching the live device (so it still plays and is heard normally; only the recording is affected). See
+        /// <see cref="ClipCue"/> and <see cref="Recorder.MuteForClipCue"/>.</summary>
+        public void MuteBriefly(TimeSpan duration) => feeder.MuteFromNow(duration);
+
         /// <summary>True when the device asked for wasn't there and Windows' default was used instead.</summary>
         public bool FellBackToDefault { get; private set; }
 

@@ -149,7 +149,11 @@ namespace ChronoRecorder
                 }
 
                 Console.WriteLine($"Saving last {e.Hotkey.ClipLengthSeconds} seconds...");
-                if (config.PlaySoundOnClip) ClipCue.Play(config.SpeakerDeviceId);   // straight away, so you know the key press counted
+                if (config.PlaySoundOnClip)
+                {
+                    ClipCue.Play(config.SpeakerDeviceId, config.MinionMode);   // straight away, so you know the key press counted
+                    recorder?.MuteForClipCue(ClipCue.DurationFor(config.MinionMode));   // heard live, but kept out of the clip itself
+                }
                 string? game = recorder.CurrentGameName;
 
                 // Joining segments spawns FFmpeg; keep the UI responsive while it runs.

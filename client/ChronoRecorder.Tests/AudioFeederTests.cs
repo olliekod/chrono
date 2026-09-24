@@ -267,6 +267,99 @@ namespace ChronoRecorder.Tests
             Assert.InRange(shift, 4800 - 30, 4800 + 30);
         }
 
+        // ------------------------------------------------------------------ muting the clip cue
+
+        /// <summary>All bytes from a marked chunk's frames are exactly zero: the frame slot is still there (nothing
+        /// shifted), but what was in it is gone.</summary>
+        private static bool IsSilentAt(FakePipe pipe, long firstFrame, int frames)
+        {
+            var bytes = pipe.Bytes;
+            long start = firstFrame * BytesPerFrame;
+            long end = start + (long)frames * BytesPerFrame;
+            if (start < 0 || end > bytes.Length) return false;
+            for (long i = start; i < end; i++) if (bytes[i] != 0) return false;
+            return true;
+        }
+
+        [Fact]
+        public void MuteFromNow_SilencesSoundCapturedInsideTheWindow()
+        {
+            var (feeder, pipe, clock) = Make();
+            clock.StopAt = TimeSpan.FromSeconds(2);
+            feeder.MuteFromNow(TimeSpan.FromSeconds(0.4));   // window: [0, 0.4)
+            PushAt(clock, feeder, 0.3, marker: 7, frames: Rate / 10);   // 100 ms ending at 0.3 s: entirely inside
+
+            feeder.Run(clock.Cts.Token);
+
+            Assert.Equal(0, CountOf(pipe, 7));                                   // the marker never made it through
+            Assert.True(IsSilentAt(pipe, (long)(0.2 * Rate), Rate / 10));        // and the slot it would have filled is silent, not missing
+        }
+
+        [Fact]
+        public void MuteFromNow_LeavesSoundOutsideTheWindowAlone()
+        {
+            var (feeder, pipe, clock) = Make();
+            clock.StopAt = TimeSpan.FromSeconds(2);
+            feeder.MuteFromNow(TimeSpan.FromSeconds(0.4));   // window: [0, 0.4)
+            PushAt(clock, feeder, 1.0, marker: 7, frames: Rate / 10);   // well after the window
+
+            feeder.Run(clock.Cts.Token);
+
+            Assert.Equal(Rate / 10, CountOf(pipe, 7));
+        }
+
+        [Fact]
+        public void MuteFromNow_OnlySilencesTheOverlappingPartOfAChunkThatCrossesTheWindowsEdge()
+        {
+            var (feeder, pipe, clock) = Make();
+            clock.StopAt = TimeSpan.FromSeconds(2);
+            feeder.MuteFromNow(TimeSpan.FromSeconds(0.5));   // window: [0, 0.5)
+            // 200 ms ending at 0.6 s, so it runs 0.4-0.6 s: the first 0.1 s of it (0.4-0.5) is inside the window.
+            PushAt(clock, feeder, 0.6, marker: 7, frames: Rate / 5);
+
+            feeder.Run(clock.Cts.Token);
+
+            Assert.True(IsSilentAt(pipe, (long)(0.4 * Rate), (int)(0.1 * Rate)));       // the muted first tenth of a second
+            Assert.Equal((int)(0.1 * Rate), CountOf(pipe, 7));                           // the marker survives for the other tenth
+        }
+
+        [Fact]
+        public void MuteFromNow_StopsMattering_OnceTheStreamHasMovedPastTheWindow()
+        {
+            // Confirms the window is a one-time thing, not something that could ever catch a much later chunk.
+            var (feeder, pipe, clock) = Make();
+            clock.StopAt = TimeSpan.FromSeconds(2);
+            feeder.MuteFromNow(TimeSpan.FromSeconds(0.2));   // window: [0, 0.2)
+            PushAt(clock, feeder, 0.1, marker: 5, frames: Rate / 20);   // inside: silenced
+            PushAt(clock, feeder, 1.5, marker: 9, frames: Rate / 10);   // long after: untouched
+
+            feeder.Run(clock.Cts.Token);
+
+            Assert.Equal(0, CountOf(pipe, 5));
+            Assert.Equal(Rate / 10, CountOf(pipe, 9));
+        }
+
+        [Fact]
+        public void MuteFromNow_AnchorsTheWindowToWhenItWasCalled_NotToZero()
+        {
+            var (feeder, pipe, clock) = Make();
+            clock.StopAt = TimeSpan.FromSeconds(3);
+            PushAt(clock, feeder, 0.5, marker: 5, frames: Rate / 10);    // before Mute is even called: untouched
+
+            // Simulate a hotkey pressed at t = 1.0 s: call MuteFromNow once the clock actually reaches that point.
+            bool muted = false;
+            var previous = clock.OnSleep;
+            clock.OnSleep = now => { previous?.Invoke(now); if (!muted && now.TotalSeconds >= 1.0) { muted = true; feeder.MuteFromNow(TimeSpan.FromSeconds(0.3)); } };
+            PushAt(clock, feeder, 1.2, marker: 7, frames: Rate / 10);    // inside [1.0, 1.3): silenced
+            PushAt(clock, feeder, 2.0, marker: 9, frames: Rate / 10);    // after the window: untouched
+
+            feeder.Run(clock.Cts.Token);
+
+            Assert.Equal(Rate / 10, CountOf(pipe, 5));
+            Assert.Equal(0, CountOf(pipe, 7));
+            Assert.Equal(Rate / 10, CountOf(pipe, 9));
+        }
+
         // ------------------------------------------------------------------- bookkeeping
 
         [Fact]

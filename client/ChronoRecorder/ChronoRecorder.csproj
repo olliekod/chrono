@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ApplicationIcon>Assets\chrono.ico</ApplicationIcon>
-    <Version>1.1.7</Version>
+    <Version>1.1.8</Version>
     <Product>Chrono</Product>
     <Company>Chrono</Company>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -34,6 +34,11 @@
     </None>
     <!-- FFmpeg ships with the app. scripts\fetch-ffmpeg.ps1 puts it here; without it the app uses the PATH. -->
     <None Update="ffmpeg\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Minion mode's clip sound (Settings > Sound). WAV, not the MP3 it was made from: NAudio.Core 2.2.1 (netstandard2.0)
+         has no MP3 decoder, only WaveFileReader. See ClipCue. -->
+    <None Update="Assets\minion.wav">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

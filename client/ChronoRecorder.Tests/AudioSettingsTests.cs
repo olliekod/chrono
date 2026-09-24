@@ -104,6 +104,33 @@ namespace ChronoRecorder.Tests
 
         [Fact]
         public void TheChimeIsOnByDefault() => Assert.True(new RecorderConfig().PlaySoundOnClip);
+
+        [Fact]
+        public void DurationMatchesTheLastNoteEnding()
+        {
+            // E5 ends at 0.16 s, B5 (the later of the two) ends at 0.10 + 0.24 = 0.34 s.
+            Assert.Equal(0.34, ClipCue.Duration.TotalSeconds, 3);
+        }
+
+        [Fact]
+        public void DurationFor_WithoutMinionMode_IsTheChimesOwnDuration()
+        {
+            Assert.Equal(ClipCue.Duration, ClipCue.DurationFor(minionMode: false));
+        }
+
+        [Fact]
+        public void DurationFor_WithMinionMode_ReadsTheRealSoundsLength()
+        {
+            // Assets\minion.wav ships next to the program (ChronoRecorder.csproj marks it CopyToOutputDirectory), and
+            // an SDK-style project propagates that through a ProjectReference, so it is there for the tests too.
+            // It's not the chime's fixed length; this only proves it actually reads the file rather than reusing it.
+            Assert.NotEqual(ClipCue.Duration, ClipCue.DurationFor(minionMode: true));
+            Assert.InRange(ClipCue.DurationFor(minionMode: true).TotalSeconds, 0.3, 2.0);
+        }
+
+
+        [Fact]
+        public void MinionModeIsOffByDefault() => Assert.False(new RecorderConfig().MinionMode);
     }
 
     public class MicMeterTests

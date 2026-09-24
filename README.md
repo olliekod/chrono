@@ -67,7 +67,7 @@ Start a game, then press:
 | Ctrl + PageUp | the last 30 seconds |
 | Ctrl + PageDown | the last 2 minutes |
 
-A short chime plays and the clip appears in your Library. You can change the keys and lengths in **Settings > Hotkeys**. Any combination of up to three keys works, for example Ctrl + Shift + \\.
+A short chime plays and the clip appears in your Library. You'll hear it, but it's never in the clip itself. Turn it off, or swap it for a minion sound (Minion mode, just for fun), in **Settings > Sound**. You can change the keys and lengths in **Settings > Hotkeys**. Any combination of up to three keys works, for example Ctrl + Shift + \\.
 
 If a game records as a black picture, open **Settings > Video** and set **Capture games as** to the monitor option.
 
