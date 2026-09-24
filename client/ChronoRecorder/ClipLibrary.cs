@@ -207,6 +207,56 @@ namespace ChronoRecorder
             }
         }
 
+        /// <summary>What moving to a new clips folder did: how many files made the move, and the names of any that didn't.</summary>
+        public sealed record FolderChangeResult(string Folder, int Moved, IReadOnlyList<string> Failed);
+
+        /// <summary>
+        /// Points the library at a new folder, moving every clip file there first (new clips are saved there from now
+        /// on regardless; <see cref="Recorder.SaveClip"/> just reads <c>OutputFolder</c> fresh each time). Records in
+        /// library.json are keyed by file name only, so nothing about them needs to change - the same names just live
+        /// in a new place. A file that can't be moved (open in another program right now) is left in the old folder
+        /// and reported, rather than guessed at or lost with no record of it: it drops out of the library until it's moved there
+        /// by hand, since <see cref="Refresh"/> only ever looks at the current folder.
+        /// </summary>
+        public FolderChangeResult ChangeFolder(string newFolder)
+        {
+            string destination = Path.GetFullPath(newFolder);
+            Directory.CreateDirectory(destination);
+
+            var failed = new List<string>();
+            int moved = 0;
+
+            if (Directory.Exists(config.OutputFolder) && !PathsEqual(config.OutputFolder, destination))
+            {
+                foreach (var path in Directory.EnumerateFiles(config.OutputFolder, "*.mp4").ToList())
+                {
+                    string name = Path.GetFileName(path);
+                    string dest = Path.Combine(destination, name);
+                    if (File.Exists(dest)) { failed.Add(name); continue; }   // a name clash: leave both where they are rather than guess
+                    if (TryMove(path, dest)) moved++; else failed.Add(name);
+                }
+            }
+
+            config.OutputFolder = destination;
+            Refresh();
+            return new FolderChangeResult(destination, moved, failed);
+        }
+
+        private static bool PathsEqual(string a, string b)
+            => string.Equals(Path.GetFullPath(a).TrimEnd('\\'), Path.GetFullPath(b).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Retries briefly: a clip open in the editor or another program can take Windows a moment to let go of.</summary>
+        private static bool TryMove(string from, string to)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try { File.Move(from, to); return true; }
+                catch (IOException) when (attempt < 6) { Thread.Sleep(250); }
+                catch (IOException) { return false; }
+                catch (UnauthorizedAccessException) { return false; }
+            }
+        }
+
         /// <summary>Delete a clip's video (to the Recycle Bin, so a slip can be undone) and remove it from the library.</summary>
         public bool Delete(string id)
         {

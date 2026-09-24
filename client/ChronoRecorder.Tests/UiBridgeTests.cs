@@ -708,6 +708,51 @@ namespace ChronoRecorder.Tests
             Assert.Equal(0, host.ExitRequests);
         }
 
+        // ------------------------------------------------------------------ clips folder
+
+        [Fact]
+        public async Task PickClipsFolder_OffersTheCurrentFolderAsWhereTheDialogStarts()
+        {
+            await Ok("pickClipsFolder");
+
+            Assert.Equal(config.OutputFolder, host.PickFolderInitial);
+        }
+
+        [Fact]
+        public async Task PickClipsFolder_CancelledChangesNothing()
+        {
+            host.FolderToPick = null;
+            string before = config.OutputFolder;
+
+            var data = await Ok("pickClipsFolder");
+
+            Assert.False((bool)data["changed"]!);
+            Assert.Equal(before, config.OutputFolder);
+            Assert.Equal(0, saves);
+            Assert.Empty(host.Posted);
+        }
+
+        [Fact]
+        public async Task PickClipsFolder_MovesClipsThenSavesAndRefreshesTheLibrary()
+        {
+            AddClip("a.mp4");
+            string destination = Path.Combine(root, "elsewhere");
+            host.FolderToPick = destination;
+
+            var data = await Ok("pickClipsFolder");
+
+            Assert.True((bool)data["changed"]!);
+            Assert.Equal(1, (int)data["moved"]!);
+            Assert.Equal(destination, (string?)data["folder"]);
+            Assert.Equal(destination, config.OutputFolder);
+            Assert.Equal(1, saves);   // the new folder was persisted
+            Assert.True(File.Exists(Path.Combine(destination, "a.mp4")));
+            Assert.Contains(host.Posted, p => p.Contains("libraryChanged"));
+
+            var clip = (await Ok("getLibrary"))["clips"]!.Single();
+            Assert.Equal("a.mp4", (string?)clip["fileName"]);
+        }
+
         // ------------------------------------------------------------- first-run setup
 
         [Fact]
@@ -1010,6 +1055,10 @@ namespace ChronoRecorder.Tests
             public void ShowInFolder(string path) { }
             public void OpenFolder(string path) => Opened = path;
             public void RequestExit() => ExitRequests++;
+            public string? FolderToPick;   // what the "user" picks in the dialog; null means Cancel
+            public string? PickFolderTitle;
+            public string? PickFolderInitial;
+            public string? PickFolder(string title, string initialFolder) { PickFolderTitle = title; PickFolderInitial = initialFolder; return FolderToPick; }
         }
 
         private sealed class FakeDiagnosticsSource : IDiagnosticsSource

@@ -261,5 +261,109 @@ namespace ChronoRecorder.Tests
             Assert.Equal("a.mp4", clip.FileName);
             Assert.Equal(Path.Combine(clips, "a.mp4"), library.PathOf(clip));
         }
+
+        // -------------------------------------------------------------------- ChangeFolder
+
+        [Fact]
+        public void ChangeFolder_MovesEveryClip_AndKeepsTheirRecords()
+        {
+            Clip("a.mp4", 100);
+            Clip("b.mp4", 200);
+            var library = NewLibrary();
+            library.Refresh();
+            string destination = Path.Combine(root, "elsewhere");
+
+            var result = library.ChangeFolder(destination);
+
+            Assert.Equal(2, result.Moved);
+            Assert.Empty(result.Failed);
+            Assert.Equal(destination, result.Folder);
+            Assert.True(File.Exists(Path.Combine(destination, "a.mp4")));
+            Assert.True(File.Exists(Path.Combine(destination, "b.mp4")));
+            Assert.False(File.Exists(Path.Combine(clips, "a.mp4")));
+
+            var snapshot = library.Snapshot().OrderBy(c => c.FileName).ToList();
+            Assert.Equal(2, snapshot.Count);
+            Assert.Equal(100, snapshot[0].SizeBytes);   // still associated with the right record, not re-created
+            Assert.Equal(Path.Combine(destination, "a.mp4"), library.PathOf(snapshot[0]));
+        }
+
+        [Fact]
+        public void ChangeFolder_PointsNewSavesAtTheNewFolder()
+        {
+            var library = NewLibrary();
+            library.ChangeFolder(Path.Combine(root, "elsewhere"));
+
+            Assert.Equal(Path.Combine(root, "elsewhere"), config.OutputFolder);
+        }
+
+        [Fact]
+        public void ChangeFolder_CreatesTheDestinationIfItDoesNotExistYet()
+        {
+            var library = NewLibrary();
+            string destination = Path.Combine(root, "brand", "new", "folder");
+
+            library.ChangeFolder(destination);
+
+            Assert.True(Directory.Exists(destination));
+        }
+
+        [Fact]
+        public void ChangeFolder_LeavesAFileBehindAndReportsIt_WhenSomethingElseHasItOpen()
+        {
+            Clip("a.mp4");
+            var library = NewLibrary();
+            library.Refresh();
+            string destination = Path.Combine(root, "elsewhere");
+
+            using (var locked = File.Open(Path.Combine(clips, "a.mp4"), FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                var result = library.ChangeFolder(destination);
+
+                Assert.Equal(0, result.Moved);
+                Assert.Equal(new[] { "a.mp4" }, result.Failed);
+                Assert.True(File.Exists(Path.Combine(clips, "a.mp4")));   // left exactly where it was
+            }
+        }
+
+        [Fact]
+        public void ChangeFolder_WithNothingToMove_StillPointsAtTheNewFolder()
+        {
+            var library = NewLibrary();
+
+            var result = library.ChangeFolder(Path.Combine(root, "elsewhere"));
+
+            Assert.Equal(0, result.Moved);
+            Assert.Empty(result.Failed);
+        }
+
+        [Fact]
+        public void ChangeFolder_ToTheSameFolder_IsAHarmlessNoOp()
+        {
+            Clip("a.mp4");
+            var library = NewLibrary();
+            library.Refresh();
+
+            var result = library.ChangeFolder(clips);
+
+            Assert.Equal(0, result.Moved);
+            Assert.Empty(result.Failed);
+            Assert.Single(library.Snapshot());   // the clip is still there, not "moved" onto itself and lost
+        }
+
+        [Fact]
+        public void ChangeFolder_OnlyTouchesClipFiles_LeavingAnythingElseInTheOldFolder()
+        {
+            Clip("a.mp4");
+            File.WriteAllText(Path.Combine(clips, "notes.txt"), "hello");
+            var library = NewLibrary();
+            library.Refresh();
+            string destination = Path.Combine(root, "elsewhere");
+
+            library.ChangeFolder(destination);
+
+            Assert.True(File.Exists(Path.Combine(clips, "notes.txt")));
+            Assert.False(File.Exists(Path.Combine(destination, "notes.txt")));
+        }
     }
 }

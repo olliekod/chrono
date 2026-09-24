@@ -25,7 +25,7 @@
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
     selectedApplication: '', screen: '2560x1440', fps: 60, clipQuality: '1080p60', audio: 'Game sound and microphone', bufferSeconds: 140,
-    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.8', needsOnboarding: false,
+    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.9', needsOnboarding: false,
     updateAvailable: params.get('update') ? '1.1.6' : null,
     updateReleaseUrl: params.get('update') ? 'https://github.com/olliekod/chrono/releases/tag/v1.1.6' : null,
     hotkeys: [
@@ -123,6 +123,13 @@
     copyLink: async () => ({}),
     showInFolder: async () => ({}),
     openClipsFolder: async () => ({}),
+    pickClipsFolder: async () => {
+      if (params.get('nofolder')) return { changed: false };
+      const folder = 'C:\\Users\\Player\\Videos\\ChronoClips';
+      config.OutputFolder = folder;
+      const failed = params.get('folderfail') ? ['old_clip.mp4'] : [];
+      return { changed: true, folder, moved: clips.length, failed };
+    },
     uploadClip: async ({ id }) => {
       for (let i = 1; i <= 10; i++) { await wait(180); Chrono.bridge.emit('uploadProgress', { id, fraction: i / 10 }); }
       const c = find(id); c.link = `https://chrono-clips.example.workers.dev/watch/${id}Zx9q`; c.uploadedUtc = new Date().toISOString(); c.canRemoveUpload = true;

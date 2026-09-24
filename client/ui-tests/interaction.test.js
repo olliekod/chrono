@@ -318,7 +318,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   await until(() => /Sound settings applied/.test(doc.querySelector('.toasts').textContent), 'sound applied toast');
   check('saving sound settings says the recording restarted', true);
   check('the chosen microphone is kept', doc.querySelector('select[aria-label="Microphone"]').value === 'm2');
-  check('Minion mode is offered, off by default, and never claims to end up in the clip', !!doc.querySelector('input[aria-label="Minion mode"]') && !doc.querySelector('input[aria-label="Minion mode"]').checked && /never ends up in the clip/.test(doc.querySelector('.settings-body').textContent));
+  check('Minion mode is offered, off by default, and says papoy', !!doc.querySelector('input[aria-label="Minion mode"]') && !doc.querySelector('input[aria-label="Minion mode"]').checked && /Papoy/.test(doc.querySelector('.settings-body').textContent));
   [...doc.querySelectorAll('.settings-nav button')].find((b) => /Uploading/.test(b.textContent)).click();
   check('the uploading page calls it Username', [...doc.querySelectorAll('.field > label')].some((l) => l.textContent === 'Username') && ![...doc.querySelectorAll('label')].some((l) => l.textContent === 'Your name'));
   check('uploading offers to send a diagnostics report on every clip, off by default', /Send a diagnostics report/.test(doc.querySelector('.settings-body').textContent) && !doc.querySelector('input[aria-label^="Send a diagnostics report"]').checked);
@@ -376,7 +376,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
 
   // ------------------------------------------------------------------ diagnostics
   const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
-  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.8' && /Chrono/.test(doc.querySelector('.brand').textContent));
+  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.9' && /Chrono/.test(doc.querySelector('.brand').textContent));
   check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
   [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
   await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');
@@ -506,6 +506,35 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   [...noneDoc.querySelectorAll('.field .btn')].find((b) => b.textContent === 'Check for updates').click();
   await until(() => /latest version/.test(noneDoc.querySelector('.field .hint').textContent), 'the up to date message');
   check('checking by hand and finding nothing says so, with no Update now button', noneDoc.querySelector('.field .btn.primary').hidden);
+
+  // ------------------------------------------------------------------- clips folder
+  const toApp = async (query) => {
+    const w = await open(query, '#settings');
+    const d = w.window.document;
+    await until(() => d.querySelector('.settings-nav button'), 'settings');
+    [...d.querySelectorAll('.settings-nav button')].find((b) => /^App$/.test(b.textContent)).click();
+    await until(() => d.querySelector('input[aria-label="Check for updates"]'), 'the App section');
+    return d;
+  };
+  const folderField = (d) => [...d.querySelectorAll('.field')].find((f) => /Clips folder/.test(f.textContent));
+
+  let fdoc2 = await toApp('');
+  check('the clips folder has Open and Change buttons', /Open folder/.test(folderField(fdoc2).textContent) && /Change folder/.test(folderField(fdoc2).textContent));
+  const pathBefore = folderField(fdoc2).querySelector('.selectable').textContent;
+  [...folderField(fdoc2).querySelectorAll('.btn')].find((b) => /Change folder/.test(b.textContent)).click();
+  await until(() => /Clips folder changed/.test(fdoc2.querySelector('.toasts').textContent), 'the changed toast');
+  check('picking a new folder shows the new path and says clips were moved', folderField(fdoc2).querySelector('.selectable').textContent !== pathBefore && /Moved/.test(fdoc2.querySelector('.toasts').textContent));
+
+  fdoc2 = await toApp('?nofolder=1');
+  const stillPath = folderField(fdoc2).querySelector('.selectable').textContent;
+  [...folderField(fdoc2).querySelectorAll('.btn')].find((b) => /Change folder/.test(b.textContent)).click();
+  await sleep(150);
+  check('cancelling the folder picker changes nothing and shows no toast', folderField(fdoc2).querySelector('.selectable').textContent === stillPath && !fdoc2.querySelector('.toasts').textContent);
+
+  fdoc2 = await toApp('?folderfail=1');
+  [...folderField(fdoc2).querySelectorAll('.btn')].find((b) => /Change folder/.test(b.textContent)).click();
+  await until(() => /couldn't be moved/.test(fdoc2.querySelector('.toasts').textContent), 'the partial-failure toast');
+  check('a clip that could not be moved is counted, not dropped with no explanation', /1 clip/.test(fdoc2.querySelector('.toasts').textContent));
 
   check('no script errors during the whole run', errors.length === 0);
   if (errors.length) console.log(errors.slice(0, 5));

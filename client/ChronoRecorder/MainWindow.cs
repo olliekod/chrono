@@ -218,6 +218,19 @@ namespace ChronoRecorder
             Application.Exit();
         }
 
+        public string? PickFolder(string title, string initialFolder)
+        {
+            if (InvokeRequired) return (string?)Invoke(new Func<string?>(() => PickFolder(title, initialFolder)));
+
+            using var dialog = new FolderBrowserDialog
+            {
+                Description = title,
+                UseDescriptionForTitle = true,
+                SelectedPath = Directory.Exists(initialFolder) ? initialFolder : "",
+            };
+            return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : null;
+        }
+
         private static void OpenInBrowser(string uri)
         {
             if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || (parsed.Scheme != "https" && parsed.Scheme != "http")) return;

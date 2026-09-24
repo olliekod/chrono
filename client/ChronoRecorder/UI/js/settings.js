@@ -182,7 +182,7 @@
       h('div', { class: 'field' }, h('label', { text: 'Microphone volume' }), h('div', { class: 'slider-row' }, volume, volumeText), meter,
         h('div', { class: 'hint', text: 'Quiet microphone? Raise this. It is applied to clips only, not to your Windows settings. Anything that would go past full scale is limited so it never crackles.' })),
       toggle('Play a sound when a clip is saved', 'A short chime so you know your hotkey worked without looking.', config.PlaySoundOnClip !== false, (v) => { config.PlaySoundOnClip = v; }),
-      toggle('Minion mode', 'Replaces the chime above with a minion sound. Just for fun. Either way, it never ends up in the clip itself.', config.MinionMode === true, (v) => { config.MinionMode = v; }),
+      toggle('Minion mode', 'Papoy.', config.MinionMode === true, (v) => { config.MinionMode = v; }),
     ];
     setTimeout(syncMeter, 0);   // after the page is on screen
     return nodes;
@@ -300,10 +300,45 @@
       toggle('Show Diagnostics', 'Adds a Diagnostics page to the sidebar with live performance numbers and a report you can copy. Handy when something isn\'t working.', config.ShowDiagnostics === true, (v) => { config.ShowDiagnostics = v; }),
       toggle('Check for updates', 'Chrono asks GitHub roughly once an hour whether a newer version is out, and tells you if one is. Nothing downloads until you say so.', config.CheckForUpdates !== false, (v) => { config.CheckForUpdates = v; }),
       updatesField(),
-      h('div', { class: 'field', style: { marginTop: '22px' } }, h('label', { text: 'Clips folder' }),
-        h('div', { class: 'selectable', style: { marginBottom: '8px', overflowWrap: 'anywhere' }, text: config.OutputFolder }),
-        h('button', { class: 'btn', type: 'button', onClick: () => bridge.request('openClipsFolder').catch(() => {}) }, icon('folder'), 'Open folder')),
+      clipsFolderField(),
     ];
+  }
+
+  /** The clips folder: where it is, and a button to open it or move everything to a different one. */
+  function clipsFolderField() {
+    const path = h('div', { class: 'selectable', style: { marginBottom: '8px', overflowWrap: 'anywhere' }, text: config.OutputFolder });
+    const status = h('div', { class: 'hint' });
+    const openBtn = h('button', { class: 'btn', type: 'button', onClick: () => bridge.request('openClipsFolder').catch(() => {}) }, icon('folder'), 'Open folder');
+    const changeBtn = h('button', { class: 'btn', type: 'button', text: 'Change folder...' });
+
+    changeBtn.addEventListener('click', async () => {
+      changeBtn.disabled = true;
+      status.textContent = '';
+      try {
+        const result = await bridge.request('pickClipsFolder');
+        if (!result.changed) return;   // the folder picker was cancelled
+
+        config.OutputFolder = result.folder;
+        saved = JSON.stringify(config);   // already applied on the server side, not a pending edit
+        path.textContent = result.folder;
+
+        if (result.failed && result.failed.length) {
+          const n = result.failed.length;
+          status.textContent = `${n} clip${n === 1 ? '' : 's'} couldn't be moved (open somewhere else right now) and stayed in the old folder.`;
+          Chrono.toast('warn', 'Clips folder changed', status.textContent);
+        } else {
+          Chrono.toast('good', 'Clips folder changed', result.moved ? `Moved ${result.moved} clip${result.moved === 1 ? '' : 's'} there.` : 'New clips will be saved there.');
+        }
+      } catch (err) {
+        Chrono.toast('error', "Couldn't change the clips folder", err.message);
+      } finally {
+        changeBtn.disabled = false;
+      }
+    });
+
+    return h('div', { class: 'field', style: { marginTop: '22px' } },
+      h('label', { text: 'Clips folder' }), path,
+      h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap' } }, openBtn, changeBtn), status);
   }
 
   /** "Check for updates" button plus, once one turns up, "Update now" right beside it. */

@@ -20,6 +20,9 @@ namespace ChronoRecorder
         /// <summary>Close Chrono. Used after handing off to an update installer, which needs Chrono gone before it can
         /// replace its files.</summary>
         void RequestExit();
+
+        /// <summary>Shows a native folder picker starting at <paramref name="initialFolder"/>. Null if cancelled.</summary>
+        string? PickFolder(string title, string initialFolder);
     }
 
     /// <summary>
@@ -97,6 +100,7 @@ namespace ChronoRecorder
                 ["trimClip"] = TrimClip,
                 ["showInFolder"] = ShowInFolder,
                 ["openClipsFolder"] = _ => { host.OpenFolder(config.OutputFolder); return Task.FromResult<object?>(new { }); },
+                ["pickClipsFolder"] = PickClipsFolder,
                 ["setRecorderEnabled"] = SetRecorderEnabled,
                 ["setMode"] = SetMode,
                 ["getRunningApps"] = _ => Task.FromResult<object?>(new { apps = recorder.RunningApplications() }),
@@ -185,6 +189,24 @@ namespace ChronoRecorder
             var clips = library.Snapshot().Select(Dto).ToList();
             Task.Run(() => library.FillMissingDetails());   // older clips get their length and size in the background
             return Task.FromResult<object?>(new { clips, clipsFolder = config.OutputFolder, canUpload = UploadRules.SettingsFrom(config) != null });
+        }
+
+        /// <summary>
+        /// Shows a native folder picker and, if someone chose one, moves every clip there and points the library at
+        /// it from now on. Cancelling changes nothing. Runs the move on a background thread, since it can copy real
+        /// data across drives; the dialog itself already blocked the UI thread while it was open.
+        /// </summary>
+        private async Task<object?> PickClipsFolder(JObject request)
+        {
+            string? chosen = host.PickFolder("Choose a clips folder", config.OutputFolder);
+            if (string.IsNullOrWhiteSpace(chosen)) return new { changed = false };
+
+            var result = await Task.Run(() => library.ChangeFolder(chosen));
+            saveConfig(config);
+            PushEvent("libraryChanged");
+            PushStatus();
+
+            return new { changed = true, folder = result.Folder, moved = result.Moved, failed = result.Failed };
         }
 
         private Task<object?> GetClip(JObject request) => Task.FromResult<object?>(new { clip = Dto(Need(request)) });
