@@ -46,12 +46,12 @@ namespace ChronoRecorder.Tests
             return path;
         }
 
-        private async Task<JObject> Call(string action, object? payload = null)
+        private async Task<JObject> Call(string action, object? payload = null, UiBridge? on = null)
         {
             var request = payload == null ? new JObject() : JObject.FromObject(payload);
             request["requestId"] = 7;
             request["action"] = action;
-            string? reply = await bridge.HandleAsync(request.ToString());
+            string? reply = await (on ?? bridge).HandleAsync(request.ToString());
             Assert.NotNull(reply);
             var json = JObject.Parse(reply!);
             Assert.Equal(7, (int?)json["requestId"]);
@@ -59,18 +59,34 @@ namespace ChronoRecorder.Tests
             return json;
         }
 
-        private async Task<JObject> Ok(string action, object? payload = null)
+        private async Task<JObject> Ok(string action, object? payload = null, UiBridge? on = null)
         {
-            var reply = await Call(action, payload);
+            var reply = await Call(action, payload, on);
             Assert.True((bool?)reply["ok"], $"{action} failed: {reply["error"]}");
             return (JObject)reply["data"]!;
         }
 
-        private async Task<string> Fails(string action, object? payload = null)
+        private async Task<string> Fails(string action, object? payload = null, UiBridge? on = null)
         {
-            var reply = await Call(action, payload);
+            var reply = await Call(action, payload, on);
             Assert.False((bool?)reply["ok"]);
             return (string)reply["error"]!;
+        }
+
+        /// <summary>Paths <see cref="BridgeWithUpdates"/>'s fake launcher was asked to start, instead of really starting
+        /// a downloaded file as a process.</summary>
+        private readonly List<string> launchedInstallers = new();
+
+        /// <summary>A fresh bridge wired to a fake GitHub, for the update-related tests. Shares the config/library/host
+        /// with the rest of the class so the usual assertions about them still work.</summary>
+        private UiBridge BridgeWithUpdates(HttpMessageHandler fakeGitHub, out UpdateChecker checker)
+        {
+            var githubHttp = new GitHubUpdater(new HttpClient(fakeGitHub));
+            checker = new UpdateChecker(config, githubHttp, () => "1.1.4");
+            var media = new ClipMedia(config, library, () => "h264_nvenc", Path.Combine(root, "thumbs_updates"));
+            return new UiBridge(config, recorder, library, media, new Uploader(new HttpClient(http)) { RetryDelay = _ => TimeSpan.Zero },
+                host, () => refusedHotkeys, _ => saves++, updates: checker, updateDownloader: githubHttp,
+                launchInstaller: launchedInstallers.Add);
         }
 
         private const string OwnerToken = "tok_0123456789abcdefghijklmnopqrstuvwxyzABCDE";
@@ -575,6 +591,109 @@ namespace ChronoRecorder.Tests
             Assert.Equal(DiagnosticsCollector.AppVersion, version);
         }
 
+        // ------------------------------------------------------------------ updates
+
+        private sealed class FakeGitHub : HttpMessageHandler
+        {
+            public string Tag = "v1.1.6";
+            public string SetupUrl = "https://example.com/Chrono-Setup.exe";
+            public byte[] InstallerBytes = Enumerable.Repeat((byte)7, 12 * 1024 * 1024).ToArray();
+            public HttpStatusCode DownloadStatus = HttpStatusCode.OK;
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            {
+                if (request.RequestUri!.Host == "api.github.com")
+                {
+                    string body = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                    {
+                        tag_name = Tag, html_url = "https://github.com/olliekod/chrono/releases",
+                        assets = new[] { new { name = "Chrono-Setup.exe", browser_download_url = SetupUrl } },
+                    });
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+                }
+
+                var response = new HttpResponseMessage(DownloadStatus);
+                if (DownloadStatus == HttpStatusCode.OK) response.Content = new ByteArrayContent(InstallerBytes);
+                return Task.FromResult(response);
+            }
+        }
+
+        [Fact]
+        public async Task CheckForUpdates_FindsANewerReleaseAndSaysSo()
+        {
+            var updateBridge = BridgeWithUpdates(new FakeGitHub { Tag = "v1.1.6" }, out _);
+
+            var data = await Ok("checkForUpdates", on: updateBridge);
+
+            Assert.Equal("1.1.6", (string?)data["updateAvailable"]);
+            Assert.Equal("1.1.6", (string?)(await Ok("getStatus", on: updateBridge))["updateAvailable"]);
+        }
+
+        [Fact]
+        public async Task WithNothingNewer_UpdateAvailableIsNull()
+        {
+            var updateBridge = BridgeWithUpdates(new FakeGitHub { Tag = "v1.1.4" }, out _);   // same as the fake "current version"
+
+            var data = await Ok("checkForUpdates", on: updateBridge);
+
+            Assert.Null((string?)data["updateAvailable"]);
+        }
+
+        [Fact]
+        public async Task InstallUpdate_DownloadsAndLaunchesTheInstaller_ThenAsksToExit()
+        {
+            var fake = new FakeGitHub { Tag = "v1.1.6" };
+            var updateBridge = BridgeWithUpdates(fake, out _);
+            await Ok("checkForUpdates", on: updateBridge);   // populates Latest
+
+            await Ok("installUpdate", on: updateBridge);
+
+            Assert.Single(launchedInstallers);
+            Assert.True(File.Exists(launchedInstallers[0]));
+            Assert.Equal(fake.InstallerBytes, await File.ReadAllBytesAsync(launchedInstallers[0]));
+            try { File.Delete(launchedInstallers[0]); } catch { }
+
+            await Task.Delay(1700);   // InstallUpdate asks the host to exit a moment after launching the installer
+            Assert.Equal(1, host.ExitRequests);
+        }
+
+        [Fact]
+        public async Task InstallUpdate_WithNothingChecked_IsRefused()
+        {
+            var updateBridge = BridgeWithUpdates(new FakeGitHub(), out _);
+
+            string error = await Fails("installUpdate", on: updateBridge);
+
+            Assert.Contains("Check for updates", error);
+            Assert.Equal(0, host.ExitRequests);
+        }
+
+        [Fact]
+        public async Task InstallUpdate_WithNoInstallerAssetYet_ExplainsRatherThanFailingOddly()
+        {
+            var fake = new FakeGitHub { Tag = "v1.1.6", SetupUrl = "" };
+            var updateBridge = BridgeWithUpdates(fake, out var checker);
+            await checker.CheckAsync();
+
+            string error = await Fails("installUpdate", on: updateBridge);
+
+            Assert.Contains("1.1.6", error);
+            Assert.Equal(0, host.ExitRequests);
+        }
+
+        [Fact]
+        public async Task InstallUpdate_OnAFailedDownload_LeavesChronoRunning()
+        {
+            var fake = new FakeGitHub { Tag = "v1.1.6", DownloadStatus = HttpStatusCode.NotFound };
+            var updateBridge = BridgeWithUpdates(fake, out _);
+            await Ok("checkForUpdates", on: updateBridge);
+
+            await Fails("installUpdate", on: updateBridge);
+            await Task.Delay(200);
+
+            Assert.Equal(0, host.ExitRequests);
+        }
+
         // ------------------------------------------------------------- first-run setup
 
         [Fact]
@@ -871,10 +990,12 @@ namespace ChronoRecorder.Tests
             public readonly List<string> Posted = new();
             public string? Clipboard;
             public string? Opened;
+            public int ExitRequests;
             public void Post(string json) => Posted.Add(json);
             public void CopyToClipboard(string text) => Clipboard = text;
             public void ShowInFolder(string path) { }
             public void OpenFolder(string path) => Opened = path;
+            public void RequestExit() => ExitRequests++;
         }
 
         private sealed class FakeDiagnosticsSource : IDiagnosticsSource

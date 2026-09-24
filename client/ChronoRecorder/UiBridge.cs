@@ -16,6 +16,10 @@ namespace ChronoRecorder
         void CopyToClipboard(string text);
         void ShowInFolder(string path);
         void OpenFolder(string path);
+
+        /// <summary>Close Chrono. Used after handing off to an update installer, which needs Chrono gone before it can
+        /// replace its files.</summary>
+        void RequestExit();
     }
 
     /// <summary>
@@ -44,13 +48,17 @@ namespace ChronoRecorder
         private readonly Func<IReadOnlyList<string>> onConfigSaved;
         private readonly Action<RecorderConfig> saveConfig;
         private readonly DiagnosticsCollector? diagnostics;
+        private readonly UpdateChecker? updates;
+        private readonly GitHubUpdater updateDownloader;
+        private readonly Action<string> launchInstaller;
 
         private readonly Dictionary<string, Func<JObject, Task<object?>>> handlers;
         private readonly HashSet<string> uploading = new();
         private MicMeter? meter;
 
         public UiBridge(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, IUiHost host, Func<IReadOnlyList<string>> onConfigSaved,
-            Action<RecorderConfig>? saveConfig = null, DiagnosticsCollector? diagnostics = null)
+            Action<RecorderConfig>? saveConfig = null, DiagnosticsCollector? diagnostics = null, UpdateChecker? updates = null, GitHubUpdater? updateDownloader = null,
+            Action<string>? launchInstaller = null)
         {
             this.diagnostics = diagnostics;
             this.config = config;
@@ -61,6 +69,10 @@ namespace ChronoRecorder
             this.host = host;
             this.onConfigSaved = onConfigSaved;
             this.saveConfig = saveConfig ?? ConfigManager.Save;   // tests pass their own so the real settings file is never touched
+            this.updates = updates;
+            this.updateDownloader = updateDownloader ?? new GitHubUpdater(GitHubUpdater.CreateHttpClient());
+            this.launchInstaller = launchInstaller ?? (path => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }));
+            if (updates != null) updates.UpdateFound += OnUpdateFound;
 
             handlers = new Dictionary<string, Func<JObject, Task<object?>>>
             {
@@ -90,6 +102,8 @@ namespace ChronoRecorder
                 ["getDiagnostics"] = GetDiagnostics,
                 ["copyDiagnostics"] = CopyDiagnostics,
                 ["openLogsFolder"] = _ => { host.OpenFolder(FileLog.DefaultFolder); return Task.FromResult<object?>(new { }); },
+                ["checkForUpdates"] = CheckForUpdates,
+                ["installUpdate"] = InstallUpdate,
             };
         }
 
@@ -112,7 +126,7 @@ namespace ChronoRecorder
                 object? data = await handler(request);
                 return Reply(id, ok: true, data, null);
             }
-            catch (UploadException ex)
+            catch (Exception ex) when (ex is UploadException or UpdateException)
             {
                 return Reply(id, ok: false, null, ex.Message);
             }
@@ -145,7 +159,7 @@ namespace ChronoRecorder
 
         public void PushStatus() => PushEvent("status", Status());
 
-        public StatusDto Status() => StatusPresenter.Build(config, recorder);
+        public StatusDto Status() => StatusPresenter.Build(config, recorder, updates?.Latest?.Version);
 
         // ------------------------------------------------------------------ library
 
@@ -376,7 +390,13 @@ namespace ChronoRecorder
             return new { };
         }
 
-        public void Dispose() => StopMeter();
+        private void OnUpdateFound(ReleaseInfo release) => PushStatus();
+
+        public void Dispose()
+        {
+            StopMeter();
+            if (updates != null) updates.UpdateFound -= OnUpdateFound;
+        }
 
         /// <summary>
         /// Ends the first-run setup. Whatever the person filled in is saved; anything left out (they pressed Skip) stays as it
@@ -435,6 +455,36 @@ namespace ChronoRecorder
             if (soundChanged || captureChanged || loadChanged) recorder.RestartRecording();   // new devices, volume or capture method start with a fresh recording
             PushStatus();
             return Task.FromResult<object?>(new { config = JObject.FromObject(config), hotkeyProblems = refused, soundRestarted = soundChanged, captureRestarted = captureChanged, loadRestarted = loadChanged });
+        }
+
+        // ---------------------------------------------------------------- updates
+
+        /// <summary>Settings' "Check for updates" button: checks right away, regardless of the timer.</summary>
+        private async Task<object?> CheckForUpdates(JObject request)
+        {
+            var release = updates == null ? null : await updates.CheckAsync();
+            PushStatus();
+            return new { updateAvailable = release?.Version };
+        }
+
+        /// <summary>
+        /// Downloads the installer for the newest known release and hands off to it, then closes Chrono so it can
+        /// replace its files. The person has to click Install in its own wizard before that happens, which is more than
+        /// enough time for Chrono to already be gone.
+        /// </summary>
+        private async Task<object?> InstallUpdate(JObject request)
+        {
+            var release = updates?.Latest ?? throw new InvalidOperationException("No update is ready to install. Check for updates first.");
+            if (string.IsNullOrEmpty(release.SetupDownloadUrl))
+                throw new InvalidOperationException($"Chrono {release.Version} is out, but it has nothing to install yet. Try again shortly, or get it from GitHub.");
+
+            string path = await updateDownloader.DownloadInstallerAsync(
+                release.SetupDownloadUrl, new Progress<double>(f => PushEvent("updateProgress", new { fraction = f })));
+
+            launchInstaller(path);
+            _ = Task.Delay(1500).ContinueWith(_ => host.RequestExit());
+
+            return new { };
         }
     }
 }

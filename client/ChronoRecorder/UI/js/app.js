@@ -33,7 +33,7 @@
     app.textContent = '';
 
     brandMark = h('span', { class: 'brand-mark' }, h('img', { src: 'img/logo.png', alt: '' }));
-    versionLabel = h('span', { class: 'version', title: 'Chrono version' });
+    versionLabel = h('button', { class: 'version', type: 'button', title: 'Chrono version', onClick: onVersionClick });
     const navItems = [
       ['library', 'Library', 'library'],
       ['recording', 'Recording', 'record'],
@@ -95,12 +95,23 @@
     const s = state.status;
     if (!s) return;
     if (navButtons.diagnostics) navButtons.diagnostics.button.hidden = !s.showDiagnostics;
-    versionLabel.textContent = s.version ? `v${s.version}` : '';
+    versionLabel.textContent = s.updateAvailable ? `Update to v${s.updateAvailable}` : s.version ? `v${s.version}` : '';
+    versionLabel.classList.toggle('update', !!s.updateAvailable);
+    versionLabel.disabled = !s.updateAvailable;
+    versionLabel.title = s.updateAvailable ? `Chrono ${s.updateAvailable} is available. Click to update.` : 'Chrono version';
     statusParts.avatar.querySelector('.initial').textContent = (s.username || 'C').trim().charAt(0).toUpperCase() || 'C';
     statusParts.avatar.querySelector('.dot').className = `dot ${s.state}`;
     statusParts.name.textContent = s.username || 'Chrono';
     statusParts.line.textContent = s.headline;
     brandMark.className = `brand-mark ${s.state === 'recording' ? 'recording' : ''}`;
+  }
+
+  /** The version pill only does anything once it says an update is available. */
+  function onVersionClick() {
+    const s = state.status;
+    if (!s || !s.updateAvailable || !Chrono.startInstall) return;
+    Chrono.toast('good', `Chrono ${s.updateAvailable} is available`, 'Chrono will close and the installer will open.',
+      { label: 'Update now', onClick: () => Chrono.startInstall(versionLabel) });
   }
 
   async function boot() {

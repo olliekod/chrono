@@ -131,6 +131,9 @@ namespace ChronoRecorder
         /// <summary>Start Chrono (into the tray) when Windows starts. Only a real install is ever registered.</summary>
         public bool StartWithWindows { get; set; } = true;
 
+        /// <summary>Ask GitHub, roughly once a day, whether a newer Chrono has been released. Off means no request is ever made.</summary>
+        public bool CheckForUpdates { get; set; } = true;
+
         /// <summary>False until the first run has opened the window once; after that Chrono starts in the tray.</summary>
         public bool FirstRunCompleted { get; set; } = false;
 

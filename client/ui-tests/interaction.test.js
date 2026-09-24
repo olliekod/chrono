@@ -374,7 +374,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
 
   // ------------------------------------------------------------------ diagnostics
   const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
-  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.5' && /Chrono/.test(doc.querySelector('.brand').textContent));
+  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.6' && /Chrono/.test(doc.querySelector('.brand').textContent));
   check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
   [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
   await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');
@@ -472,6 +472,33 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   const bareSaved = await bare.window.Chrono.bridge.request('getSettings');
   check('skipping everything saves nothing and asks for no key', bareSaved.config.ApiUrl === '' && bareSaved.config.UploadKey === '' && bareSaved.config.Username === 'username');
   check('and says how to set up uploading later', /Settings/.test(bdoc.querySelector('.toasts').textContent));
+
+  // ------------------------------------------------------------------- updates
+  const upd = await open('?update=1');
+  const udoc = upd.window.document;
+  await until(() => udoc.querySelector('.status-panel'), 'the app');
+  const pill = udoc.querySelector('.brand .version');
+  check('an available update shows as a pill next to the name, not just a version number', /Update to v1\.1\.6/.test(pill.textContent) && pill.classList.contains('update'));
+  pill.click();
+  await until(() => /Update now/.test(udoc.querySelector('.toasts').textContent), 'the update toast');
+  check('clicking it offers to update, explaining Chrono will close', /Chrono will close/.test(udoc.querySelector('.toasts').textContent));
+  [...udoc.querySelectorAll('.toasts .btn')].find((b) => /Update now/.test(b.textContent)).click();
+  await until(() => /Starting the installer/.test(udoc.querySelector('.toasts').textContent), 'the starting toast');
+  check('confirming starts the install and says Chrono will close', true);
+
+  const upd2 = await open('?update=1', '#settings');
+  const u2doc = upd2.window.document;
+  await until(() => u2doc.querySelector('.settings-nav button'), 'settings');
+  [...u2doc.querySelectorAll('.settings-nav button')].find((b) => /^App$/.test(b.textContent)).click();
+  await until(() => u2doc.querySelector('input[aria-label="Check for updates"]'), 'the App section');
+  check('Settings already knows an update is available, without a fresh check', /1\.1\.6/.test(u2doc.querySelector('.field .hint').textContent) && !u2doc.querySelector('.field .btn.primary').hidden);
+  const noneDoc = (await open('?noupdate=1', '#settings')).window.document;
+  await until(() => noneDoc.querySelector('.settings-nav button'), 'settings again');
+  [...noneDoc.querySelectorAll('.settings-nav button')].find((b) => /^App$/.test(b.textContent)).click();
+  await until(() => noneDoc.querySelector('input[aria-label="Check for updates"]'), 'the App section again');
+  [...noneDoc.querySelectorAll('.field .btn')].find((b) => b.textContent === 'Check for updates').click();
+  await until(() => /latest version/.test(noneDoc.querySelector('.field .hint').textContent), 'the up to date message');
+  check('checking by hand and finding nothing says so, with no Update now button', noneDoc.querySelector('.field .btn.primary').hidden);
 
   check('no script errors during the whole run', errors.length === 0);
   if (errors.length) console.log(errors.slice(0, 5));

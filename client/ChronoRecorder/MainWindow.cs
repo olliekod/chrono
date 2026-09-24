@@ -39,13 +39,13 @@ namespace ChronoRecorder
         private FormWindowState stateBeforeFullscreen;
         private Rectangle boundsBeforeFullscreen;
 
-        public MainWindow(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, Func<IReadOnlyList<string>> onConfigSaved)
+        public MainWindow(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, Func<IReadOnlyList<string>> onConfigSaved, UpdateChecker? updateChecker = null)
         {
             this.config = config;
             this.library = library;
             this.media = media;
             bridge = new UiBridge(config, recorder, library, media, uploader, this, onConfigSaved,
-                diagnostics: recorder is IDiagnosticsSource source ? new DiagnosticsCollector(source) : null);
+                diagnostics: recorder is IDiagnosticsSource source ? new DiagnosticsCollector(source) : null, updates: updateChecker);
 
             Text = "Chrono";
             Icon = TrayIcons.Logo;
@@ -210,6 +210,12 @@ namespace ChronoRecorder
         {
             try { Directory.CreateDirectory(path); Process.Start("explorer.exe", $"\"{path}\""); }
             catch (Exception ex) { Console.WriteLine($"Couldn't open the folder: {ex.Message}"); }
+        }
+
+        public void RequestExit()
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(RequestExit)); return; }
+            Application.Exit();
         }
 
         private static void OpenInBrowser(string uri)

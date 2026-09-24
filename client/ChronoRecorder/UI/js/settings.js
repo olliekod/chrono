@@ -15,7 +15,7 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true };
+  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, CheckForUpdates: true };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
@@ -296,11 +296,68 @@
       toggle('Start Chrono with Windows', 'Chrono stays in the tray and records games on its own. It has no overlay.', config.StartWithWindows !== false, (v) => { config.StartWithWindows = v; }),
       toggle('Show notifications', 'A small message when a clip is saved or something needs your attention.', config.ShowNotifications !== false, (v) => { config.ShowNotifications = v; }),
       toggle('Show Diagnostics', 'Adds a Diagnostics page to the sidebar with live performance numbers and a report you can copy. Handy when something isn\'t working.', config.ShowDiagnostics === true, (v) => { config.ShowDiagnostics = v; }),
+      toggle('Check for updates', 'Chrono asks GitHub roughly once a day whether a newer version is out, and tells you if one is. Nothing downloads until you say so.', config.CheckForUpdates !== false, (v) => { config.CheckForUpdates = v; }),
+      updatesField(),
       h('div', { class: 'field', style: { marginTop: '22px' } }, h('label', { text: 'Clips folder' }),
         h('div', { class: 'selectable', style: { marginBottom: '8px', overflowWrap: 'anywhere' }, text: config.OutputFolder }),
         h('button', { class: 'btn', type: 'button', onClick: () => bridge.request('openClipsFolder').catch(() => {}) }, icon('folder'), 'Open folder')),
     ];
   }
+
+  /** "Check for updates" button plus, once one turns up, "Update now" right beside it. */
+  function updatesField() {
+    const known = Chrono.state && Chrono.state.status && Chrono.state.status.updateAvailable;
+    const status = h('span', { class: 'hint', style: { margin: '0' }, text: known ? `Chrono ${known} is available.` : '' });
+    const checkBtn = h('button', { class: 'btn', type: 'button', text: 'Check for updates' });
+    const updateBtn = h('button', { class: 'btn primary', type: 'button', text: 'Update now', hidden: !known });
+
+    checkBtn.addEventListener('click', async () => {
+      checkBtn.disabled = true;
+      status.textContent = 'Checking...';
+      try {
+        const result = await bridge.request('checkForUpdates');
+        if (result.updateAvailable) {
+          status.textContent = `Chrono ${result.updateAvailable} is available.`;
+          updateBtn.hidden = false;
+        } else {
+          status.textContent = "You're on the latest version.";
+          updateBtn.hidden = true;
+        }
+      } catch {
+        status.textContent = "Couldn't check for updates. Check your connection.";
+      } finally {
+        checkBtn.disabled = false;
+      }
+    });
+
+    updateBtn.addEventListener('click', () => startInstall(updateBtn, status));
+
+    return h('div', { class: 'field' },
+      h('label', { text: 'Updates' }),
+      h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' } }, checkBtn, updateBtn, status));
+  }
+
+  /** Downloads and launches the installer; Chrono closes itself a moment after. Shared by the Settings button and the
+   * version pill in the sidebar. */
+  async function startInstall(button, status) {
+    button.disabled = true;
+    if (status) status.textContent = 'Downloading the update...';
+    const off = bridge.on('updateProgress', ({ fraction }) => {
+      if (status) status.textContent = `Downloading the update... ${Math.round((fraction || 0) * 100)}%`;
+    });
+    try {
+      await bridge.request('installUpdate');
+      Chrono.toast('good', 'Starting the installer', 'Chrono will close in a moment.');
+    } catch (err) {
+      Chrono.toast('error', "Couldn't install the update", err.message);
+      button.disabled = false;
+      if (status) status.textContent = '';
+    } finally {
+      off();
+    }
+  }
+
+  Chrono.startInstall = startInstall;
 
   const BUILDERS = { recording: recordingSection, audio: audioSection, hotkeys: hotkeysSection, upload: uploadSection, app: appSection };
 

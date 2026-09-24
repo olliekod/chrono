@@ -52,6 +52,8 @@ FFmpeg and everything else Chrono needs is inside the installer. It runs on Wind
 
 To update, run the new `Chrono-Setup.exe` over the old one. You don't need to uninstall first. The installer closes Chrono if it is running, replaces the program files, and leaves your clips and settings alone.
 
+Chrono also checks for a newer version itself, roughly once a day, and shows the version at the top left as a button once one is out. Clicking it downloads the installer and runs it for you; Chrono closes so it can update, and you click through the same installer as above. Nothing downloads on its own. Turn this off in **Settings > App > Check for updates** if you'd rather update by hand.
+
 If you prefer no installer, `Chrono-win-x64.zip` on the same page is a portable copy. Unzip it anywhere and run `ChronoRecorder.exe`.
 
 To uninstall, use Windows Settings > Apps > Installed apps > Chrono. Your clips and settings stay on disk. Delete `Videos\Chrono` and `%APPDATA%\Chrono` if you want those gone too. For the portable copy, exit Chrono from the tray menu and delete its folder, after turning off **Settings > App > Start Chrono with Windows** if you had it on.

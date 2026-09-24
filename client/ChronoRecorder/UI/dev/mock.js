@@ -25,7 +25,8 @@
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
     selectedApplication: '', screen: '2560x1440', fps: 60, clipQuality: '1080p60', audio: 'Game sound and microphone', bufferSeconds: 140,
-    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.5', needsOnboarding: false,
+    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.6', needsOnboarding: false,
+    updateAvailable: params.get('update') ? '1.1.6' : null,
     hotkeys: [
       { name: 'Quick Clip', keys: ['Control', 'PageUp'], seconds: 30 },
       { name: 'Long Clip', keys: ['Control', 'PageDown'], seconds: 120 },
@@ -42,7 +43,7 @@
     Encoder: 'auto', Mode: 2, RecorderEnabled: true, SelectedApplication: '', OutputFolder: 'C:\\Users\\Player\\Videos\\Chrono',
     TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0,
     GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
-    FirstRunCompleted: true, ShowDiagnostics: false,
+    FirstRunCompleted: true, ShowDiagnostics: false, CheckForUpdates: true,
     Hotkeys: [
       { Name: 'Quick Clip', Key: 'PageUp', Modifiers: ['Control'], ClipLengthSeconds: 30 },
       { Name: 'Long Clip', Key: 'PageDown', Modifiers: ['Control'], ClipLengthSeconds: 120 },
@@ -208,6 +209,19 @@
     },
     copyDiagnostics: async () => ({}),
     openLogsFolder: async () => ({}),
+    checkForUpdates: async () => {
+      status.updateAvailable = params.get('noupdate') ? null : '1.1.6';
+      Chrono.bridge.emit('status', copy(status));
+      return { updateAvailable: status.updateAvailable };
+    },
+    installUpdate: async () => {
+      if (!status.updateAvailable) throw new Error('No update is ready to install. Check for updates first.');
+      for (const fraction of [0.25, 0.5, 0.75, 1]) {
+        await wait(150);
+        Chrono.bridge.emit('updateProgress', { fraction });
+      }
+      return {};
+    },
     completeOnboarding: async ({ username, apiUrl, uploadKey }) => {
       if (username) config.Username = username;
       if (apiUrl) config.ApiUrl = apiUrl;

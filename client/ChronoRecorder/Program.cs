@@ -13,6 +13,7 @@ namespace ChronoRecorder
         private static Notifier? notifier;
         private static TrayApp? tray;
         private static ClipLibrary? library;
+        private static UpdateChecker? updateChecker;
 
         [STAThread]
         static void Main(string[] args)
@@ -51,10 +52,17 @@ namespace ChronoRecorder
             library = new ClipLibrary(config);
             var media = new ClipMedia(config, library, () => recorder.EncoderName);
 
+            updateChecker = new UpdateChecker(config, new GitHubUpdater(GitHubUpdater.CreateHttpClient()));
+
             // Chrono lives in the tray; the window is opened on demand and freed when closed.
-            tray = new TrayApp(config, recorder, hotkeyManager, library, media, new Uploader(Uploader.CreateHttpClient()));
+            tray = new TrayApp(config, recorder, hotkeyManager, library, media, new Uploader(Uploader.CreateHttpClient()), updateChecker);
             notifier = new Notifier(config, tray.Icon);
             instance.ListenForShowRequests(tray.RequestShow);
+
+            // A found update is announced on the UI thread, since it touches the tray icon's balloon.
+            updateChecker.UpdateFound += release => OnUiThread(() =>
+                notifier?.Info("Update available", $"Chrono {release.Version} is ready. Open Chrono to install it."));
+            updateChecker.Start();
 
             // FFmpeg failures arrive on a worker thread; the tray icon belongs to the UI thread.
             recorder.RecordingFailed += message => OnUiThread(() => notifier?.Error("Recording problem", message));
@@ -92,6 +100,7 @@ namespace ChronoRecorder
             hotkeyManager.Dispose();
             recorder.StopMonitoring();
             recorder.StopRecording();
+            updateChecker?.Dispose();
             Console.WriteLine("Chrono exited");
         }
 
