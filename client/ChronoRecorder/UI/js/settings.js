@@ -5,7 +5,7 @@
   const { h, icon, bridge } = Chrono;
 
   const SECTIONS = [
-    ['recording', 'Recording'],
+    ['recording', 'Video'],
     ['audio', 'Sound'],
     ['hotkeys', 'Hotkeys'],
     ['upload', 'Uploading'],
@@ -70,7 +70,7 @@
     hintPainter = paintHint;
 
     return [
-      h('h2', { text: 'Recording' }),
+      h('h2', { text: 'Video' }),
       field('Clip size', select(config.Resolution || '1920x1080', [
         ['native', 'Native (largest files)'], ['2560x1440', '1440p'], ['1920x1080', '1080p (recommended)'], ['1280x720', '720p (smallest files)'],
       ], (v) => { config.Resolution = v; }),

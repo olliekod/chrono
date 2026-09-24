@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ApplicationIcon>Assets\chrono.ico</ApplicationIcon>
-    <Version>1.1.4</Version>
+    <Version>1.1.5</Version>
     <Product>Chrono</Product>
     <Company>Chrono</Company>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

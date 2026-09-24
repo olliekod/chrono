@@ -271,7 +271,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   // ---------------------------------------------------------------- settings
   doc.querySelectorAll('.nav-item')[2].click();
   await until(() => doc.querySelector('.settings-body input'), 'settings');
-  check('settings sidebar has the sections', [...doc.querySelectorAll('.settings-nav button')].map((b) => b.textContent).join() === 'Recording,Sound,Hotkeys,Uploading,App');
+  check('settings sidebar has the sections', [...doc.querySelectorAll('.settings-nav button')].map((b) => b.textContent).join() === 'Video,Sound,Hotkeys,Uploading,App');
   check('no unsaved bar until something changes', !doc.querySelector('.unsaved'));
   const bitrate = doc.querySelector('input[type=number]');
   check('bitrate is empty and shows the recommendation', bitrate.value === '' && /recommended/.test(bitrate.placeholder));
@@ -282,8 +282,8 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('Reset clears the bar and the change', !doc.querySelector('.unsaved') && doc.querySelector('input[type=number]').value === '');
 
   // ---- Sound
-  // ---- Recording settings: native wording and how games are captured
-  [...doc.querySelectorAll('.settings-nav button')].find((b) => /^Recording$/.test(b.textContent)).click();
+  // ---- Video settings: native wording and how games are captured
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /^Video$/.test(b.textContent)).click();
   const sizeOptions = [...doc.querySelector('.settings-body select').options].map((o) => o.text);
   check('the clip size says Native, not Original size', sizeOptions.includes('Native (largest files)') && !sizeOptions.some((t) => /Original/.test(t)));
   const captureSelect = doc.querySelector('select[aria-label="Capture games as"]') || [...doc.querySelectorAll('.settings-body select')].find((s) => /Automatic/.test(s.options[0].text));
@@ -363,7 +363,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   check('saving works and the bar goes away' + (doc.querySelector('.unsaved') ? ' (bar says: ' + doc.querySelector('.unsaved').textContent + ')' : ''), !doc.querySelector('.unsaved'));
 
   // ------------------------------------------------------------- recording load setting
-  [...doc.querySelectorAll('.settings-nav button')].find((b) => /Recording/.test(b.textContent)).click();
+  [...doc.querySelectorAll('.settings-nav button')].find((b) => /^Video$/.test(b.textContent)).click();
   await until(() => doc.querySelector('select[aria-label="Recording load"]'), 'the recording load setting');
   const loadSelect = doc.querySelector('select[aria-label="Recording load"]');
   check('recording load offers automatic, automatic with a lower frame rate, normal and light, automatic first', [...loadSelect.options].map((o) => o.value).join() === 'auto,autofps,normal,light' && loadSelect.value === 'auto');
@@ -374,7 +374,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
 
   // ------------------------------------------------------------------ diagnostics
   const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
-  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.4' && /Chrono/.test(doc.querySelector('.brand').textContent));
+  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.5' && /Chrono/.test(doc.querySelector('.brand').textContent));
   check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
   [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
   await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');

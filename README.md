@@ -32,9 +32,9 @@ The design keeps the work small:
 Chrono was built and measured on an RTX 4080. It has not been run on a GTX 1650 or a 30-series card, so what follows is designed from those measurements, not confirmed on that hardware.
 
 - On a modest card (the GTX 10 and 16 series, RTX 20 series, RTX 3050 and 3060, and integrated graphics, for example) Chrono starts on a faster encoder setting. On the 4080 that took the video encoder from about 10% to 7% for the same file size and almost the same picture.
-- Chrono watches how fast it is encoding. If it measures that your PC can't keep up, it switches to a faster encoder setting, restarts the recording, and tells you. It keeps the frame rate you chose. Frame rate is what matters most for load: 30 FPS halves what recording asks of the graphics card, so if 60 is still too much for your PC, Chrono says so and you can pick 30 FPS, or pick "Automatic, and lower the frame rate if needed" under Settings > Recording > Recording load.
+- Chrono watches how fast it is encoding. If it measures that your PC can't keep up, it switches to a faster encoder setting, restarts the recording, and tells you. It keeps the frame rate you chose. Frame rate is what matters most for load: 30 FPS halves what recording asks of the graphics card, so if 60 is still too much for your PC, Chrono says so and you can pick 30 FPS, or pick "Automatic, and lower the frame rate if needed" under Settings > Video > Recording load.
 - If the graphics card's encoder won't start (an old NVIDIA driver, or another recording program using it), Chrono records on the processor instead and says why.
-- **Settings > Recording > Recording load** lets you pick Normal or Light yourself. Automatic is the default.
+- **Settings > Video > Recording load** lets you pick Normal or Light yourself. Automatic is the default.
 
 ## Diagnostics
 
@@ -67,7 +67,7 @@ Start a game, then press:
 
 A short chime plays and the clip appears in your Library. You can change the keys and lengths in **Settings > Hotkeys**. Any combination of up to three keys works, for example Ctrl + Shift + \\.
 
-If a game records as a black picture, open **Settings > Recording** and set **Capture games as** to the monitor option.
+If a game records as a black picture, open **Settings > Video** and set **Capture games as** to the monitor option.
 
 ## Sharing clips
 

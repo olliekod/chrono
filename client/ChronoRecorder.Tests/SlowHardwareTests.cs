@@ -339,18 +339,23 @@ namespace ChronoRecorder.Tests
     {
         private static readonly DateTime Start = new(2026, 9, 21, 12, 0, 0, DateTimeKind.Utc);
 
+        // Frames constant across reports (no duplicate-ratio signal) unless a test says otherwise: these exercise the
+        // speed-based half of the governor only.
         private static EncodeStats Report(double secondsIn, double speed)
             => new(1000, 60, 0, 0, speed, 20000, secondsIn, Start.AddSeconds(secondsIn));
 
         private static bool Step(LoadGovernor g, double secondsIn, double speed, int level = 0, int highest = 2)
-            => g.ShouldStepDown(Report(secondsIn, speed), Start, level, highest, out _);
+            => g.Evaluate(Report(secondsIn, speed), Start, level, highest).StepDown;
+
+        private static bool AtLimit(LoadGovernor g, double secondsIn, double speed)
+            => g.Evaluate(Report(secondsIn, speed), Start, currentLevel: 2, highestLevel: 2).BehindAtLimit;
 
         [Fact]
         public void BehindWithNoStepLeft_IsReportedOncePerRun_SoTheUserCanChooseALowerFrameRate()
         {
             var g = new LoadGovernor();
             var said = new List<bool>();
-            for (int i = 0; i < 10; i++) said.Add(g.IsBehindAtTheLimit(Report(20 + i * 2, 0.76), Start));
+            for (int i = 0; i < 10; i++) said.Add(AtLimit(g, 20 + i * 2, 0.76));
 
             Assert.Equal(new[] { false, false, false, false, true, false, false, false, false, true }, said);
         }
@@ -359,8 +364,8 @@ namespace ChronoRecorder.Tests
         public void BehindWithNoStepLeft_IsNotReported_DuringWarmUpOrWhenKeepingUp()
         {
             var g = new LoadGovernor();
-            for (int i = 0; i < 5; i++) Assert.False(g.IsBehindAtTheLimit(Report(2 + i * 2, 0.5), Start));   // still starting up
-            for (int i = 0; i < 20; i++) Assert.False(g.IsBehindAtTheLimit(Report(30 + i * 2, 1.0), Start));
+            for (int i = 0; i < 5; i++) Assert.False(AtLimit(g, 2 + i * 2, 0.5));   // still starting up
+            for (int i = 0; i < 20; i++) Assert.False(AtLimit(g, 30 + i * 2, 1.0));
         }
 
         [Fact]
@@ -425,10 +430,86 @@ namespace ChronoRecorder.Tests
         public void TheReasonSaysHowFarBehind()
         {
             var g = new LoadGovernor();
-            string reason = "";
-            for (int i = 0; i < 5; i++) g.ShouldStepDown(Report(20 + i * 2, 0.71), Start, 0, 2, out reason);
+            GovernorVerdict verdict = default;
+            for (int i = 0; i < 5; i++) verdict = g.Evaluate(Report(20 + i * 2, 0.71), Start, 0, 2);
 
-            Assert.Contains("0.71x", reason);
+            Assert.Contains("0.71x", verdict.Reason);
+        }
+
+        // ------------------------------------------------------- duplicate frames: the encoder looks fine, capture isn't
+
+        // A friend's GTX 1650 clip: FFmpeg reported ~1.0x real time throughout while 81% of the frames it wrote were
+        // exact repeats of the one before, because the graphics card couldn't hand the game and Desktop Duplication
+        // enough real frames. speed alone never caught this; these reports carry growing Frames/DuplicatedFrames instead.
+        private static EncodeStats DupReport(double secondsIn, long frames, long duplicates, double speed = 0.99)
+            => new(frames, 60, duplicates, 0, speed, 20000, secondsIn, Start.AddSeconds(secondsIn));
+
+        [Fact]
+        public void MostlyRepeatedFrames_CountsAsBehind_EvenWhenTheEncoderSpeedLooksFine()
+        {
+            var g = new LoadGovernor();
+            g.Evaluate(DupReport(20, frames: 1200, duplicates: 0), Start, 0, 2);   // establishes a baseline to compare against
+
+            var results = new List<bool>();
+            for (int i = 1; i <= 5; i++)
+                // +120 frames (2s at 60fps) each report, 100 of them repeats: 83%, well past the 50% line.
+                results.Add(g.Evaluate(DupReport(20 + i * 2, frames: 1200 + i * 120, duplicates: i * 100), Start, 0, 2).StepDown);
+
+            Assert.Equal(new[] { false, false, false, false, true }, results);
+        }
+
+        [Fact]
+        public void ReasonMentionsTheGraphicsCard_NotASpeedNumber_ForRepeatedFrames()
+        {
+            var g = new LoadGovernor();
+            g.Evaluate(DupReport(20, frames: 1200, duplicates: 0), Start, 0, 2);
+
+            GovernorVerdict verdict = default;
+            for (int i = 1; i <= 5; i++) verdict = g.Evaluate(DupReport(20 + i * 2, frames: 1200 + i * 120, duplicates: i * 100), Start, 0, 2);
+
+            Assert.Contains("graphics card", verdict.Reason);
+        }
+
+        [Fact]
+        public void AFewRepeatedFrames_IsNormalPlay_AndIsLeftAlone()
+        {
+            // A still moment or an even frame boundary, not a slideshow: comfortably under the 50% line.
+            var g = new LoadGovernor();
+            g.Evaluate(DupReport(20, frames: 1200, duplicates: 0), Start, 0, 2);
+
+            for (int i = 1; i <= 20; i++)
+                Assert.False(g.Evaluate(DupReport(20 + i * 2, frames: 1200 + i * 120, duplicates: i * 20), Start, 0, 2).StepDown);   // ~17%
+        }
+
+        [Fact]
+        public void TheFirstReportAfterWarmUp_HasNothingToCompareAgainst_SoItIsNeverBehindOnDuplicatesAlone()
+        {
+            var g = new LoadGovernor();
+            // No baseline yet: even a report that would look 100% duplicated against a real earlier one can't be judged.
+            Assert.False(g.Evaluate(DupReport(20, frames: 5000, duplicates: 4900), Start, 0, 2).StepDown);
+        }
+
+        [Fact]
+        public void RepeatedFrames_AlsoTriggerTheAtTheLimitWarning()
+        {
+            var g = new LoadGovernor();
+            g.Evaluate(DupReport(20, frames: 1200, duplicates: 0), Start, 2, 2);
+
+            var said = new List<bool>();
+            for (int i = 1; i <= 5; i++) said.Add(g.Evaluate(DupReport(20 + i * 2, frames: 1200 + i * 120, duplicates: i * 100), Start, 2, 2).BehindAtLimit);
+
+            Assert.Equal(new[] { false, false, false, false, true }, said);
+        }
+
+        [Fact]
+        public void CallingEvaluateTwiceOnTheSameReport_ComparesItWithItself_SoTheSecondCallFindsNoNewDuplicates()
+        {
+            var g = new LoadGovernor();
+            g.Evaluate(DupReport(20, frames: 1200, duplicates: 0), Start, 0, 2);
+
+            var same = DupReport(22, frames: 1320, duplicates: 100);
+            Assert.False(g.Evaluate(same, Start, 0, 2).StepDown);
+            for (int i = 0; i < 10; i++) Assert.False(g.Evaluate(same, Start, 0, 2).StepDown);   // frames never advance from here
         }
     }
 
@@ -590,6 +671,34 @@ namespace ChronoRecorder.Tests
         public void AHealthyRecording_HasNothingToReport()
         {
             var findings = DiagnosticsFindings.Evaluate(Healthy());
+
+            Assert.Single(findings);
+            Assert.Equal("good", findings[0].Tone);
+        }
+
+        [Fact]
+        public void MostlyRepeatedFrames_IsAFinding_EvenWithAHealthySpeed()
+        {
+            // A friend's real clip: 81% repeated frames at a reported 0.99x. Encoding speed alone missed it entirely.
+            var findings = DiagnosticsFindings.Evaluate(Healthy() with { Frames = 2722, Duplicated = 2210 });
+
+            Assert.Contains(findings, f => f.Tone == "bad" && f.Text.Contains("81%") && f.Text.Contains("choppy"));
+        }
+
+        [Fact]
+        public void AFewRepeatedFrames_IsNotAFinding()
+        {
+            // The exact numbers from a real alt-tab burst (ADroppedFramesCount_IsExplainedNotAlarming): well under the line.
+            var findings = DiagnosticsFindings.Evaluate(Healthy() with { Frames = 9000, Duplicated = 344 });
+
+            Assert.DoesNotContain(findings, f => f.Tone == "bad" || f.Tone == "warn");
+        }
+
+        [Fact]
+        public void NoFramesYet_IsNotJudged()
+        {
+            // Frames defaults to 0 (not recording, or nothing measured yet): dividing by it would be nonsense, not a finding.
+            var findings = DiagnosticsFindings.Evaluate(Healthy() with { Frames = 0, Duplicated = 0 });
 
             Assert.Single(findings);
             Assert.Equal("good", findings[0].Tone);
@@ -776,6 +885,19 @@ namespace ChronoRecorder.Tests
             Assert.Contains("normal", dropped.Value);
             Assert.Equal("", dropped.Tone);
             Assert.DoesNotContain(dto.Findings, f => f.Tone == "warn" || f.Tone == "bad");
+        }
+
+        [Fact]
+        public void RepeatedFrames_ShowsTheShare_AndIsToned()
+        {
+            var source = new FakeSource();
+            source.Facts = source.Facts with { Stats = new EncodeStats(2722, 59.9, 2210, 0, 0.99, 10500, 45, DateTime.UtcNow) };
+
+            var dto = new DiagnosticsCollector(source).Collect();
+            var repeated = dto.Sections.SelectMany(s => s.Rows).First(r => r.Label == "Repeated frames");
+
+            Assert.StartsWith("2210 (81%", repeated.Value);
+            Assert.Equal("bad", repeated.Tone);
         }
 
         [Fact]

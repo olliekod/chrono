@@ -583,20 +583,18 @@ namespace ChronoRecorder
 
             bool presetStep = LoadPlan.HasPresetStep(ResolveEncoder());
             int highest = LoadPlan.HighestUsefulLevel(config.Fps, presetStep, LoadPlan.MayLowerFrameRate(config.EncoderLoad));
-            if (!watching.ShouldStepDown(stats, started, loadLevel, highest, out string reason))
-            {
-                // Out of steps the governor may take, but still behind: the frame rate is the user's setting, so say so once.
-                if (loadLevel >= highest && config.Fps > 30 && !suggestedLowerFps && watching.IsBehindAtTheLimit(stats, started))
-                {
-                    suggestedLowerFps = true;
-                    string text = $"This PC can't keep up with recording at {config.Fps} FPS ({stats.Speed:0.00}x real time), so frames are being lost. Choose 30 FPS under Frame rate in Settings, or set Recording load to \"Automatic, and lower the frame rate if needed\".";
-                    Note("⚠ " + text);
-                    Warning?.Invoke(text);
-                }
-                return;
-            }
+            var verdict = watching.Evaluate(stats, started, loadLevel, highest);
 
-            StepDownLoad(reason);
+            if (verdict.StepDown) { StepDownLoad(verdict.Reason); return; }
+
+            // Out of steps the governor may take, but still behind: the frame rate is the user's setting, so say so once.
+            if (verdict.BehindAtLimit && config.Fps > 30 && !suggestedLowerFps)
+            {
+                suggestedLowerFps = true;
+                string text = $"This PC can't keep up with recording at {config.Fps} FPS: {verdict.Reason}. Choose 30 FPS under Frame rate in Settings, or set Recording load to \"Automatic, and lower the frame rate if needed\".";
+                Note("⚠ " + text);
+                Warning?.Invoke(text);
+            }
         }
 
         /// <summary>This PC can't keep up: remember the next lighter step, tell the user, and let the monitor restart the recording with it.</summary>

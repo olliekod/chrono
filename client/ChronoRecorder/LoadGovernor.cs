@@ -67,15 +67,36 @@ namespace ChronoRecorder
         }
     }
 
+    /// <summary>One progress report's verdict: step the recording down a level, or (nothing left to step down to) just say so.</summary>
+    public readonly record struct GovernorVerdict(bool StepDown, bool BehindAtLimit, string Reason)
+    {
+        public static readonly GovernorVerdict None = new(false, false, "");
+    }
+
     /// <summary>
-    /// Decides when a recording can't keep up and should move down a step. It reads how fast FFmpeg is encoding against
-    /// real time (its "speed"): 1.0 is keeping up, and a run of readings well under that means frames are being lost.
-    /// A run rather than one reading, because a loading screen can starve the encoder for a moment.
+    /// Decides when a recording can't keep up and should move down a step. Two different signals catch two different
+    /// bottlenecks, because one of them hides from the other:
+    ///  - FFmpeg's own "speed" (how fast it is encoding against real time) is behind when the ENCODER can't keep up.
+    ///  - A slow graphics card can also starve the CAPTURE side while the encoder has nothing to do but repeat the last
+    ///    frame it got, which is nearly free to encode: "speed" stays near 1.0x and the problem is invisible to it.
+    ///    Measured on a friend's clip (GTX 1650, Windows 10): 81% of the frames in a "0.99x real time" recording were
+    ///    exact repeats, which plays back as a choppy slideshow at roughly a fifth of the frame rate it was saved at.
+    ///    So a report also counts as behind when most of what it wrote since the last report was a repeat, not new
+    ///    content: FFmpeg already reports this (<see cref="EncodeStats.DuplicatedFrames"/>), it just wasn't used before.
+    /// Either way, a run of readings rather than one, because a loading screen legitimately has nothing new to draw for
+    /// a moment, on either signal.
     /// </summary>
     public sealed class LoadGovernor
     {
         /// <summary>Encoding this much slower than real time counts as behind.</summary>
         public const double BehindBelow = 0.92;
+
+        /// <summary>
+        /// This share (or more) of the frames written since the last report being repeats, not new content, counts as
+        /// behind. Generous on purpose: normal play always has a few repeats (a still moment, an even frame boundary),
+        /// and this only needs to catch a recording that is substantially a slideshow, not shave a healthy one further.
+        /// </summary>
+        public const double DuplicateRatioAbove = 0.5;
 
         /// <summary>Consecutive progress reports (two seconds apart) that must all be behind.</summary>
         public const int BehindReports = 5;
@@ -85,42 +106,72 @@ namespace ChronoRecorder
 
         private int behind;
         private int behindAtLimit;
-
-        /// <summary>True (once per run of bad readings) when this report means the recording should move down a step.</summary>
-        public bool ShouldStepDown(EncodeStats stats, DateTime startedUtc, int currentLevel, int highestLevel, out string reason)
-        {
-            reason = "";
-            if (currentLevel >= highestLevel) { behind = 0; return false; }
-            if (stats.AtUtc - startedUtc < Warmup) return false;
-            if (stats.Speed <= 0) return false;   // "N/A": nothing measured yet
-
-            if (stats.Speed >= BehindBelow)
-            {
-                behind = 0;
-                return false;
-            }
-
-            behind++;
-            if (behind < BehindReports) return false;
-
-            behind = 0;
-            reason = $"encoding at {stats.Speed:0.00}x real time";
-            return true;
-        }
+        private EncodeStats? previous;
 
         /// <summary>
-        /// True (once per run of bad readings) when the recording is behind and the governor has no step left it may take,
-        /// so the only remedy is one the user has to choose, such as a lower frame rate.
+        /// Looks at one progress report and decides what it means for this recording: step down a level, or (already at
+        /// the highest level this governor may take) that it is behind with nowhere left to go. Call it once per report;
+        /// it compares frame counts against the report before, so calling it twice on the same one would compare it
+        /// with itself and find no new duplicates.
         /// </summary>
-        public bool IsBehindAtTheLimit(EncodeStats stats, DateTime startedUtc)
+        public GovernorVerdict Evaluate(EncodeStats stats, DateTime startedUtc, int currentLevel, int highestLevel)
         {
-            if (stats.AtUtc - startedUtc < Warmup || stats.Speed <= 0) return false;
-            if (stats.Speed >= BehindBelow) { behindAtLimit = 0; return false; }
-            if (++behindAtLimit < BehindReports) return false;
+            bool ready = stats.AtUtc - startedUtc >= Warmup && stats.Speed > 0;   // "N/A": nothing measured yet
+            string reason = "";
+            bool bad = ready && IsBehind(stats, out reason);
+            previous = stats;
+
+            if (!ready)
+            {
+                behind = 0;
+                behindAtLimit = 0;
+                return GovernorVerdict.None;
+            }
+
+            if (currentLevel < highestLevel)
+            {
+                behindAtLimit = 0;
+                if (!bad) { behind = 0; return GovernorVerdict.None; }
+                if (++behind < BehindReports) return GovernorVerdict.None;
+                behind = 0;
+                return new GovernorVerdict(true, false, reason);
+            }
+
+            behind = 0;
+            if (!bad) { behindAtLimit = 0; return GovernorVerdict.None; }
+            if (++behindAtLimit < BehindReports) return GovernorVerdict.None;
             behindAtLimit = 0;
-            return true;
+            return new GovernorVerdict(false, true, reason);
         }
 
-        public void Reset() { behind = 0; behindAtLimit = 0; }
+        private bool IsBehind(EncodeStats stats, out string reason)
+        {
+            reason = "";
+            if (stats.Speed < BehindBelow)
+            {
+                reason = $"encoding at {stats.Speed:0.00}x real time";
+                return true;
+            }
+
+            if (previous != null)
+            {
+                long newFrames = stats.Frames - previous.Frames;
+                long newDuplicates = stats.DuplicatedFrames - previous.DuplicatedFrames;
+                if (newFrames > 0 && (double)newDuplicates / newFrames >= DuplicateRatioAbove)
+                {
+                    reason = "the graphics card can't produce new frames fast enough";
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public void Reset()
+        {
+            behind = 0;
+            behindAtLimit = 0;
+            previous = null;
+        }
     }
 }

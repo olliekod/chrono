@@ -146,7 +146,7 @@ namespace ChronoRecorder
         bool Recording, string Encoder, string EncoderNote, GpuDetector.GpuType GpuType, GpuDetector.GpuTier GpuTier, CaptureMethod? Method,
         double Speed, long Dropped, double FfmpegCpuOneCore, double EncodeEnginePercent, double ThreeDEnginePercent,
         int LoadLevel, int ConfiguredFps, uint ScreenAdapterVendorId, string ScreenAdapterName, double RamGb, string GpuName,
-        string GameCapture = "auto", bool BorderlessCapture = true);
+        string GameCapture = "auto", bool BorderlessCapture = true, long Frames = 0, long Duplicated = 0);
 
     public static class DiagnosticsFindings
     {
@@ -164,7 +164,16 @@ namespace ChronoRecorder
 
             // Dropped frames are deliberately not a finding. FFmpeg counts a frame as dropped when several arrive for one output
             // slot, which happens in bursts when a window is restored after an alt-tab, and constantly when a game runs faster
-            // than the recording. Nothing is lost by it: what shows a recording really falling behind is the encoding speed.
+            // than the recording. Nothing is lost by it.
+
+            // Encoding speed alone can miss a struggling PC: a starved capture (the graphics card can't hand over new frames
+            // fast enough) has the encoder just repeating the last one, which is nearly free, so speed stays near 1.0x while
+            // the picture is really a slideshow. Found on a friend's GTX 1650 clip: 81% of it was repeated frames at a
+            // reported 0.99x. Repeated frames are normal in small numbers (a still moment, an even frame boundary); this is
+            // the cumulative share since the recording started, so a brief bad stretch in an hours-long session won't trip it,
+            // but a sustained one, like his, will.
+            if (f.Recording && f.Frames > 0 && (double)f.Duplicated / f.Frames >= 0.5)
+                found.Add(new DiagFinding("bad", $"{100.0 * f.Duplicated / f.Frames:0}% of the frames recorded so far are repeats of the last one, not new content. Clips will look like a choppy slideshow. Try a lower frame rate."));
 
             // On Windows 10 a captured window gets a yellow border, so a game is recorded through the screen instead.
             if (f.Recording && f.Method is CaptureMethod.DesktopDuplication or CaptureMethod.Gdi && !f.BorderlessCapture
@@ -366,7 +375,10 @@ namespace ChronoRecorder
                 new("Encoded FPS", stats == null ? (facts.Recording ? "measuring..." : "not recording") : $"{stats.Fps:0.0}"),
                 new("Dropped frames", stats == null ? (facts.Recording ? "measuring..." : "not recording")
                     : stats.DroppedFrames == 0 ? "0" : $"{stats.DroppedFrames} (FFmpeg's count. Bursts when a window is restored are normal, and nothing is lost while the speed above stays at 1.00x)"),
-                new("Repeated frames", stats == null ? (facts.Recording ? "measuring..." : "not recording") : $"{stats.DuplicatedFrames} (normal while the game isn't drawing)"),
+                new("Repeated frames", stats == null ? (facts.Recording ? "measuring..." : "not recording")
+                    : stats.Frames <= 0 ? $"{stats.DuplicatedFrames}"
+                    : $"{stats.DuplicatedFrames} ({100.0 * stats.DuplicatedFrames / stats.Frames:0}% of {stats.Frames} so far. A few is normal while the game isn't drawing; most of them means this PC can't keep up.)",
+                    stats != null && stats.Frames > 0 ? Tone((double)stats.DuplicatedFrames / stats.Frames >= 0.5, (double)stats.DuplicatedFrames / stats.Frames >= 0.2) : ""),
             };
 
             var pc = new List<DiagRow>
@@ -392,7 +404,7 @@ namespace ChronoRecorder
                 gpuInfo?.Type ?? GpuDetector.GpuType.Unknown, gpuInfo?.Tier ?? GpuDetector.GpuTier.Modest, facts.Method,
                 stats?.Speed ?? 0, stats?.DroppedFrames ?? 0, cpuOneCore, Math.Max(encode, 0), Math.Max(threeD, 0),
                 facts.LoadLevel, facts.ConfiguredFps, facts.ScreenAdapterVendorId, facts.ScreenAdapterName, system.RamGb, gpuInfo?.Name ?? "",
-                facts.GameCapture, facts.BorderlessCapture));
+                facts.GameCapture, facts.BorderlessCapture, stats?.Frames ?? 0, stats?.DuplicatedFrames ?? 0));
 
             return new DiagnosticsDto(
                 AppVersion, now,
