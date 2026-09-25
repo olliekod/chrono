@@ -20,6 +20,7 @@ namespace ChronoRecorder
         private readonly ClipMedia media;
         private readonly Uploader uploader;
         private readonly UpdateChecker? updateChecker;
+        private readonly VoiceClipListener? voice;
         private readonly NotifyIcon icon;
         private readonly Control marshal;   // an invisible control, so other threads can hand work to the UI thread
         private readonly System.Windows.Forms.Timer statusTimer;
@@ -33,7 +34,7 @@ namespace ChronoRecorder
 
         public NotifyIcon Icon => icon;
 
-        public TrayApp(RecorderConfig config, Recorder recorder, HotkeyManager hotkeys, ClipLibrary library, ClipMedia media, Uploader uploader, UpdateChecker? updateChecker = null)
+        public TrayApp(RecorderConfig config, Recorder recorder, HotkeyManager hotkeys, ClipLibrary library, ClipMedia media, Uploader uploader, UpdateChecker? updateChecker = null, VoiceClipListener? voice = null)
         {
             this.config = config;
             this.recorder = recorder;
@@ -42,6 +43,7 @@ namespace ChronoRecorder
             this.media = media;
             this.uploader = uploader;
             this.updateChecker = updateChecker;
+            this.voice = voice;
 
             marshal = new Control();
             marshal.CreateControl();
@@ -82,7 +84,7 @@ namespace ChronoRecorder
             }
 
             Console.WriteLine("Opening the window");
-            var opened = new MainWindow(config, recorder, library, media, uploader, OnConfigSaved, updateChecker);
+            var opened = new MainWindow(config, recorder, library, media, uploader, OnConfigSaved, updateChecker, voice);
             opened.FormClosed += (s, e) =>
             {
                 Console.WriteLine("Window closed; freeing its browser");

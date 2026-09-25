@@ -364,6 +364,43 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
   await sleep(100);
   check('saving works and the bar goes away' + (doc.querySelector('.unsaved') ? ' (bar says: ' + doc.querySelector('.unsaved').textContent + ')' : ''), !doc.querySelector('.unsaved'));
 
+  // ------------------------------------------------------- voice-activated clip (still on Hotkeys: 3 hotkeys now)
+  // Saving re-renders the whole section (settings.js's save() calls render()), so query fresh every time rather
+  // than holding onto an element from before a save: an old reference goes stale and stops affecting the page.
+  const voiceToggle = () => doc.querySelector('input[aria-label="Voice-activated clip"]');
+  const voiceSelect = () => doc.querySelector('select[aria-label="Which hotkey voice-activated clip uses"]');
+  const saveHotkeys = async () => {
+    [...doc.querySelectorAll('.unsaved .btn')].find((b) => /Save changes/.test(b.textContent)).click();
+    await until(() => /Settings saved/.test(doc.querySelector('.toasts').textContent), 'hotkeys settings saved');
+  };
+  check('voice-activated clip starts off, with its hotkey picker hidden', !voiceToggle().checked && voiceSelect().parentElement.hidden);
+
+  voiceToggle().checked = true; voiceToggle().dispatchEvent(new window.Event('change', { bubbles: true }));
+  check('turning it on shows a picker listing every hotkey, defaulting to the first', !voiceSelect().parentElement.hidden
+    && [...voiceSelect().options].map((o) => o.value).join() === 'Quick Clip,Long Clip,New clip' && voiceSelect().value === 'Quick Clip');
+
+  voiceSelect().value = 'Long Clip'; voiceSelect().dispatchEvent(new window.Event('change', { bubbles: true }));
+  await saveHotkeys();
+  let savedVoice = await window.Chrono.bridge.request('getSettings');
+  check('the chosen hotkey is saved', savedVoice.config.VoiceClipEnabled === true && savedVoice.config.VoiceClipHotkeyName === 'Long Clip');
+
+  // Renaming the hotkey voice-activated clip is pointed at should carry the picker (and the saved value) along with it.
+  const longClipName = [...doc.querySelectorAll('.hotkey-row input[aria-label="Name"]')].find((i) => i.value === 'Long Clip');
+  longClipName.value = 'Epic Clip'; longClipName.dispatchEvent(new window.Event('input', { bubbles: true }));
+  check('renaming the chosen hotkey renames it in the picker too', voiceSelect().value === 'Epic Clip');
+  await saveHotkeys();
+  savedVoice = await window.Chrono.bridge.request('getSettings');
+  check('the rename is reflected in what was saved, not the old name', savedVoice.config.VoiceClipHotkeyName === 'Epic Clip');
+
+  // Removing the chosen hotkey falls back to another one rather than pointing at nothing.
+  doc.querySelector('button[aria-label="Remove Epic Clip"]').click();
+  check('removing the chosen hotkey falls back to one that still exists', ['Quick Clip', 'New clip'].includes(voiceSelect().value));
+  await saveHotkeys();
+
+  voiceToggle().checked = false; voiceToggle().dispatchEvent(new window.Event('change', { bubbles: true }));
+  check('turning it off hides the picker again', voiceSelect().parentElement.hidden);
+  await saveHotkeys();
+
   // ------------------------------------------------------------- recording load setting
   [...doc.querySelectorAll('.settings-nav button')].find((b) => /^Video$/.test(b.textContent)).click();
   await until(() => doc.querySelector('select[aria-label="Recording load"]'), 'the recording load setting');
@@ -376,7 +413,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
 
   // ------------------------------------------------------------------ diagnostics
   const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
-  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.9' && /Chrono/.test(doc.querySelector('.brand').textContent));
+  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.10' && /Chrono/.test(doc.querySelector('.brand').textContent));
   check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
   [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
   await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');

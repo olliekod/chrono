@@ -69,6 +69,8 @@ Start a game, then press:
 
 A short chime plays and the clip appears in your Library. You'll hear it, but it's never in the clip itself. Turn it off, or swap it for a minion sound (Minion mode, just for fun), in **Settings > Sound**. You can change the keys and lengths in **Settings > Hotkeys**. Any combination of up to three keys works, for example Ctrl + Shift + \\.
 
+Don't want to reach for a key? Turn on **Voice-activated clip** in **Settings > Hotkeys**, pick which of your hotkeys it should use, and say "chrono, clip that" instead. It runs entirely on your PC with Windows' own offline speech recognition; nothing is sent anywhere or recorded.
+
 If a game records as a black picture, open **Settings > Video** and set **Capture games as** to the monitor option.
 
 ## Sharing clips

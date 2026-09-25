@@ -118,6 +118,12 @@ namespace ChronoRecorder
         /// <summary>Play the minion sound instead of the usual chime. Just for fun.</summary>
         public bool MinionMode { get; set; } = false;
 
+        /// <summary>Say "chrono, clip that" to save a clip hands-free, using the hotkey named <see cref="VoiceClipHotkeyName"/>.</summary>
+        public bool VoiceClipEnabled { get; set; } = false;
+
+        /// <summary>Which hotkey's length and name a voice-activated clip uses. Matched against <c>Hotkeys[].Name</c>.</summary>
+        public string VoiceClipHotkeyName { get; set; } = "";
+
         /// <summary>Trim a constant audio/video offset, in milliseconds (positive delays the sound). Normally 0.</summary>
         public int AudioDelayMs { get; set; } = 0;
 

@@ -15,7 +15,7 @@
   let config = null, saved = '', section = 'recording', recommended = null;
   let body, nav, barHost, offs = [], listening = null, listenHandler = null;
 
-  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, CheckForUpdates: true, SendDiagnosticsOnClip: false, MinionMode: false };
+  const DEFAULTS = { ShowDiagnostics: false, EncoderLoad: 'auto', LearnedLoadLevel: 0, GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, CheckForUpdates: true, SendDiagnosticsOnClip: false, MinionMode: false, VoiceClipEnabled: false, VoiceClipHotkeyName: '' };
 
   const dirty = () => config && JSON.stringify(config) !== saved;
 
@@ -200,11 +200,30 @@
     const rows = h('div');
     const info = h('div', { class: 'hint', style: { marginTop: '16px' } });
 
+    // Which hotkey "chrono, clip that" uses. Kept in sync with the rows above: refillVoice() runs after anything
+    // that could change the list of names (added, removed, or one of them renamed while it's the chosen one).
+    const voiceSelect = h('select', { class: 'input', style: { maxWidth: '280px' }, 'aria-label': 'Which hotkey voice-activated clip uses' });
+    const voiceField = h('div', { class: 'field', style: { marginTop: '4px' } }, voiceSelect);
+    const refillVoice = () => {
+      voiceSelect.textContent = '';
+      for (const k of config.Hotkeys) voiceSelect.append(h('option', { value: k.Name, text: k.Name || '(unnamed)' }));
+      if (config.Hotkeys.length && !config.Hotkeys.some((k) => k.Name === config.VoiceClipHotkeyName)) {
+        config.VoiceClipHotkeyName = config.Hotkeys[0].Name;
+      }
+      voiceSelect.value = config.VoiceClipHotkeyName || '';
+      voiceField.hidden = !config.VoiceClipEnabled || config.Hotkeys.length === 0;
+    };
+    voiceSelect.addEventListener('change', () => { config.VoiceClipHotkeyName = voiceSelect.value; touched(); });
+
     const paint = () => {
       rows.textContent = '';
       const combos = config.Hotkeys.map((k) => Chrono.hotkeyParts(k).join('+'));
       config.Hotkeys.forEach((k, index) => {
-        const name = textInput(k.Name, (v) => { k.Name = v; }, { 'aria-label': 'Name', placeholder: 'Name', maxlength: 40 });
+        const name = textInput(k.Name, (v) => {
+          if (config.VoiceClipHotkeyName === k.Name) config.VoiceClipHotkeyName = v;   // follow a rename of the chosen one
+          k.Name = v;
+          refillVoice();
+        }, { 'aria-label': 'Name', placeholder: 'Name', maxlength: 40 });
         const capture = h('button', { class: 'capture', type: 'button', 'aria-label': `Keys for ${k.Name}. Click, then press the keys.` });
         const showKeys = () => {
           capture.classList.remove('listening');
@@ -229,6 +248,7 @@
         if (duplicate) rows.append(h('div', { class: 'hint warn', style: { margin: '-2px 0 8px' }, text: 'Another hotkey uses the same keys.' }));
       });
       updateInfo();
+      refillVoice();
     };
 
     const updateInfo = () => {
@@ -245,6 +265,9 @@
       rows,
       h('button', { class: 'btn', type: 'button', style: { marginTop: '8px' }, onClick: () => { config.Hotkeys.push(nextFreeHotkey()); paint(); touched(); } }, icon('keyboard'), 'Add a hotkey'),
       info,
+      toggle('Voice-activated clip', 'Say "chrono, clip that" to save a clip hands-free, using the hotkey below. Uses Windows\' own offline speech recognition on your default microphone; nothing is sent anywhere or recorded.',
+        config.VoiceClipEnabled === true, (v) => { config.VoiceClipEnabled = v; refillVoice(); }),
+      voiceField,
     ];
   }
 

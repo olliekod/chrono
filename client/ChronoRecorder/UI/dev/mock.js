@@ -25,7 +25,7 @@
   const status = {
     enabled: true, recording: true, state: 'recording', headline: 'Recording Risk of rain 2', target: 'Risk of rain 2', mode: 'Auto',
     selectedApplication: '', screen: '2560x1440', fps: 60, clipQuality: '1080p60', audio: 'Game sound and microphone', bufferSeconds: 140,
-    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.9', needsOnboarding: false,
+    username: 'Oliver', canUpload: true, showDiagnostics: false, version: '1.1.10', needsOnboarding: false,
     updateAvailable: params.get('update') ? '1.1.6' : null,
     updateReleaseUrl: params.get('update') ? 'https://github.com/olliekod/chrono/releases/tag/v1.1.6' : null,
     hotkeys: [
@@ -45,6 +45,7 @@
     TempFolder: 'C:\\Temp\\Chrono', RecordAudio: true, RecordMicrophone: true, AudioDelayMs: 0,
     GameCapture: 'auto', SpeakerDeviceId: '', MicrophoneDeviceId: '', MicrophoneVolumePercent: 100, PlaySoundOnClip: true, ShowNotifications: true, StartWithWindows: true,
     FirstRunCompleted: true, ShowDiagnostics: false, CheckForUpdates: true, SendDiagnosticsOnClip: false, MinionMode: false,
+    VoiceClipEnabled: false, VoiceClipHotkeyName: 'Quick Clip',
     Hotkeys: [
       { Name: 'Quick Clip', Key: 'PageUp', Modifiers: ['Control'], ClipLengthSeconds: 30 },
       { Name: 'Long Clip', Key: 'PageDown', Modifiers: ['Control'], ClipLengthSeconds: 120 },

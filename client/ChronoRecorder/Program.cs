@@ -14,6 +14,7 @@ namespace ChronoRecorder
         private static TrayApp? tray;
         private static ClipLibrary? library;
         private static UpdateChecker? updateChecker;
+        private static VoiceClipListener? voice;
         private static DiagnosticsCollector? diagnosticsForSending;
         private static readonly DiagnosticsSender diagnosticsSender = new(DiagnosticsSender.CreateHttpClient());
 
@@ -57,8 +58,13 @@ namespace ChronoRecorder
 
             updateChecker = new UpdateChecker(config, new GitHubUpdater(GitHubUpdater.CreateHttpClient()));
 
+            voice = new VoiceClipListener();
+            voice.Triggered += OnVoiceTriggered;
+            voice.Failed += message => OnUiThread(() => notifier?.Error("Voice-activated clip", message));
+            voice.Reconcile(config);   // only actually listens if VoiceClipEnabled was already on
+
             // Chrono lives in the tray; the window is opened on demand and freed when closed.
-            tray = new TrayApp(config, recorder, hotkeyManager, library, media, new Uploader(Uploader.CreateHttpClient()), updateChecker);
+            tray = new TrayApp(config, recorder, hotkeyManager, library, media, new Uploader(Uploader.CreateHttpClient()), updateChecker, voice);
             notifier = new Notifier(config, tray.Icon);
             instance.ListenForShowRequests(tray.RequestShow);
 
@@ -104,6 +110,7 @@ namespace ChronoRecorder
             recorder.StopMonitoring();
             recorder.StopRecording();
             updateChecker?.Dispose();
+            voice?.Dispose();
             Console.WriteLine("Chrono exited");
         }
 
@@ -137,8 +144,29 @@ namespace ChronoRecorder
         }
 
         // async void because this is an event handler. It runs on the UI thread, so every await resumes there,
-        // which is what lets it touch the tray icon. Nothing may escape the try/catch.
-        private static async void OnHotkeyPressed(object? sender, HotkeyManager.HotkeyPressedEventArgs e)
+        // which is what lets it touch the tray icon. Nothing may escape the try/catch (SaveClipFor's own try/catch).
+        private static async void OnHotkeyPressed(object? sender, HotkeyManager.HotkeyPressedEventArgs e) => await SaveClipFor(e.Hotkey);
+
+        // The recognizer's event fires on its own background thread, unlike a hardware hotkey (already on the UI
+        // thread by the time HotkeyPressed reaches here), so this hands off before touching the tray or the config.
+        private static void OnVoiceTriggered() => OnUiThread(async () =>
+        {
+            var hotkey = config.Hotkeys?.Find(h => h.Name == config.VoiceClipHotkeyName);
+            if (hotkey == null)
+            {
+                notifier?.Error("Voice-activated clip", "Its hotkey wasn't found. Check Settings > Hotkeys.");
+                return;
+            }
+            Console.WriteLine("\"chrono, clip that\" heard");
+            await SaveClipFor(hotkey);
+        });
+
+        /// <summary>
+        /// Saves the last <c>hotkey.ClipLengthSeconds</c> as a clip, exactly as if that hotkey had just been pressed -
+        /// a hardware hotkey and a voice trigger both end up here, so the chime, the mute around it, the library entry
+        /// and the optional diagnostics report all work the same way regardless of how the save was asked for.
+        /// </summary>
+        private static async Task SaveClipFor(HotkeyConfig hotkey)
         {
             try
             {
@@ -148,20 +176,20 @@ namespace ChronoRecorder
                     return;
                 }
 
-                Console.WriteLine($"Saving last {e.Hotkey.ClipLengthSeconds} seconds...");
+                Console.WriteLine($"Saving last {hotkey.ClipLengthSeconds} seconds...");
                 if (config.PlaySoundOnClip)
                 {
-                    ClipCue.Play(config.SpeakerDeviceId, config.MinionMode);   // straight away, so you know the key press counted
+                    ClipCue.Play(config.SpeakerDeviceId, config.MinionMode);   // straight away, so you know the trigger counted
                     recorder?.MuteForClipCue(ClipCue.DurationFor(config.MinionMode));   // heard live, but kept out of the clip itself
                 }
                 string? game = recorder.CurrentGameName;
 
                 // Joining segments spawns FFmpeg; keep the UI responsive while it runs.
-                string clipPath = await Task.Run(() => recorder.SaveClip(e.Hotkey.ClipLengthSeconds, e.Hotkey.Name));
+                string clipPath = await Task.Run(() => recorder.SaveClip(hotkey.ClipLengthSeconds, hotkey.Name));
                 Console.WriteLine($"✓ Clip saved: {clipPath}");
 
                 // The clip goes into the library and stays there. Uploading is something you choose to do, from the library.
-                var clip = library.AddSaved(clipPath, game, LibraryIndex.DefaultTitle(game, e.Hotkey.Name, DateTime.Now));
+                var clip = library.AddSaved(clipPath, game, LibraryIndex.DefaultTitle(game, hotkey.Name, DateTime.Now));
                 _ = Task.Run(() => library.FillMissingDetails());
 
                 notifier?.Info("Clip saved", $"{clip.Title}\nClick to open it in your library.");

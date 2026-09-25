@@ -54,6 +54,7 @@ namespace ChronoRecorder
         private readonly UpdateChecker? updates;
         private readonly GitHubUpdater updateDownloader;
         private readonly Action<string> launchInstaller;
+        private readonly VoiceClipListener? voice;
 
         /// <summary>
         /// How long InstallUpdate waits after launching the installer before asking the host to exit. Long enough for
@@ -69,8 +70,9 @@ namespace ChronoRecorder
 
         public UiBridge(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, IUiHost host, Func<IReadOnlyList<string>> onConfigSaved,
             Action<RecorderConfig>? saveConfig = null, DiagnosticsCollector? diagnostics = null, UpdateChecker? updates = null, GitHubUpdater? updateDownloader = null,
-            Action<string>? launchInstaller = null)
+            Action<string>? launchInstaller = null, VoiceClipListener? voice = null)
         {
+            this.voice = voice;
             this.diagnostics = diagnostics;
             this.config = config;
             this.recorder = recorder;
@@ -478,11 +480,14 @@ namespace ChronoRecorder
                 || !string.Equals(incoming.Encoder, config.Encoder, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(incoming.EncoderLoad, config.EncoderLoad, StringComparison.OrdinalIgnoreCase);
 
+            bool voiceChanged = incoming.VoiceClipEnabled != config.VoiceClipEnabled;
+
             // Edit the live config in place: the recorder and hotkeys hold this same instance.
             config.CopyFrom(incoming);
             saveConfig(config);
             var refused = onConfigSaved();   // hotkeys Windows wouldn't register: another program already uses those keys
             if (soundChanged || captureChanged || loadChanged) recorder.RestartRecording();   // new devices, volume or capture method start with a fresh recording
+            if (voiceChanged) voice?.Reconcile(config);   // starts or stops listening for "chrono, clip that" to match
             PushStatus();
             return Task.FromResult<object?>(new { config = JObject.FromObject(config), hotkeyProblems = refused, soundRestarted = soundChanged, captureRestarted = captureChanged, loadRestarted = loadChanged });
         }

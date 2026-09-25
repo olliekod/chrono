@@ -131,6 +131,9 @@ namespace ChronoRecorder.Tests
 
         [Fact]
         public void MinionModeIsOffByDefault() => Assert.False(new RecorderConfig().MinionMode);
+
+        [Fact]
+        public void VoiceActivatedClipIsOffByDefault() => Assert.False(new RecorderConfig().VoiceClipEnabled);
     }
 
     public class MicMeterTests

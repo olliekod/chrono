@@ -39,13 +39,13 @@ namespace ChronoRecorder
         private FormWindowState stateBeforeFullscreen;
         private Rectangle boundsBeforeFullscreen;
 
-        public MainWindow(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, Func<IReadOnlyList<string>> onConfigSaved, UpdateChecker? updateChecker = null)
+        public MainWindow(RecorderConfig config, IRecorder recorder, ClipLibrary library, ClipMedia media, Uploader uploader, Func<IReadOnlyList<string>> onConfigSaved, UpdateChecker? updateChecker = null, VoiceClipListener? voice = null)
         {
             this.config = config;
             this.library = library;
             this.media = media;
             bridge = new UiBridge(config, recorder, library, media, uploader, this, onConfigSaved,
-                diagnostics: recorder is IDiagnosticsSource source ? new DiagnosticsCollector(source) : null, updates: updateChecker);
+                diagnostics: recorder is IDiagnosticsSource source ? new DiagnosticsCollector(source) : null, updates: updateChecker, voice: voice);
 
             Text = "Chrono";
             Icon = TrayIcons.Logo;

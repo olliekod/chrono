@@ -55,7 +55,13 @@ namespace ChronoRecorder
             c.EncoderLoad = c.EncoderLoad!.ToLowerInvariant();
             c.LearnedLoadLevel = Math.Clamp(c.LearnedLoadLevel, 0, LoadPlan.MaxLevel);
 
-            return ValidateHotkeys(c.Hotkeys);
+            string? hotkeyProblem = ValidateHotkeys(c.Hotkeys);
+            if (hotkeyProblem != null) return hotkeyProblem;
+
+            if (c.VoiceClipEnabled && !(c.Hotkeys ?? new List<HotkeyConfig>()).Any(h => h.Name == c.VoiceClipHotkeyName))
+                return "Choose which hotkey \"Voice-activated clip\" should use.";
+
+            return null;
         }
 
         public static string? ValidateHotkeys(List<HotkeyConfig>? hotkeys)

@@ -17,6 +17,7 @@ namespace ChronoRecorder.Tests
         private readonly StubServer http = new();
         private readonly ClipLibrary library;
         private readonly UiBridge bridge;
+        private readonly VoiceClipListener voice = new();
         private int saves;
         private int configSavedCallbacks;
         private IReadOnlyList<string> refusedHotkeys = Array.Empty<string>();
@@ -31,10 +32,10 @@ namespace ChronoRecorder.Tests
             var media = new ClipMedia(config, library, () => "h264_nvenc", Path.Combine(root, "thumbs"));
             bridge = new UiBridge(config, recorder, library, media, new Uploader(new HttpClient(http)) { RetryDelay = _ => TimeSpan.Zero },
                 host, () => { configSavedCallbacks++; return refusedHotkeys; }, _ => saves++,
-                diagnostics: new DiagnosticsCollector(new FakeDiagnosticsSource()));
+                diagnostics: new DiagnosticsCollector(new FakeDiagnosticsSource()), voice: voice);
         }
 
-        public void Dispose() { try { Directory.Delete(root, true); } catch { } }
+        public void Dispose() { try { Directory.Delete(root, true); } catch { } voice.Dispose(); }
 
         // -------------------------------------------------------------------- helpers
 
@@ -603,6 +604,59 @@ namespace ChronoRecorder.Tests
             Assert.Equal(DiagnosticsCollector.AppVersion, version);
         }
 
+        // ------------------------------------------------------------- voice-activated clip
+
+        [Fact]
+        public async Task TurningVoiceClipOn_NeedsAHotkeyChosen()
+        {
+            var sent = JObject.FromObject(config);
+            sent["VoiceClipEnabled"] = true;
+            sent["VoiceClipHotkeyName"] = "Not a real one";
+
+            Assert.Contains("Voice-activated clip", await Fails("saveSettings", new { config = sent }));
+            Assert.Equal(0, voice.ReconcileCalls);   // refused before anything was applied
+        }
+
+        [Fact]
+        public async Task TurningVoiceClipOn_WithAValidHotkey_SavesAndTellsTheListenerToStart()
+        {
+            var sent = JObject.FromObject(config);
+            sent["VoiceClipEnabled"] = true;
+            sent["VoiceClipHotkeyName"] = "Quick Clip";
+
+            await Ok("saveSettings", new { config = sent });
+
+            Assert.True(config.VoiceClipEnabled);
+            Assert.Equal("Quick Clip", config.VoiceClipHotkeyName);
+            Assert.Equal(1, voice.ReconcileCalls);
+            Assert.True(voice.LastReconciledTo);
+        }
+
+        [Fact]
+        public async Task TurningVoiceClipOff_TellsTheListenerToStop()
+        {
+            config.VoiceClipEnabled = true;
+            config.VoiceClipHotkeyName = "Quick Clip";
+            var sent = JObject.FromObject(config);
+            sent["VoiceClipEnabled"] = false;
+
+            await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal(1, voice.ReconcileCalls);
+            Assert.False(voice.LastReconciledTo);
+        }
+
+        [Fact]
+        public async Task SavingSomethingUnrelated_NeverTouchesTheVoiceListener()
+        {
+            var sent = JObject.FromObject(config);
+            sent["Username"] = "SomeoneElse";
+
+            await Ok("saveSettings", new { config = sent });
+
+            Assert.Equal(0, voice.ReconcileCalls);
+        }
+
         // ------------------------------------------------------------------ updates
 
         private sealed class FakeGitHub : HttpMessageHandler
@@ -1150,6 +1204,34 @@ namespace ChronoRecorder.Tests
         {
             var c = Valid(); c.ApiUrl = "";
             Assert.Null(SettingsRules.ValidateAndTidy(c));
+        }
+
+        [Fact]
+        public void VoiceClipDisabled_NeedsNoHotkeyChosen()
+        {
+            var c = Valid(); c.VoiceClipEnabled = false; c.VoiceClipHotkeyName = "";
+            Assert.Null(SettingsRules.ValidateAndTidy(c));
+        }
+
+        [Fact]
+        public void VoiceClipEnabled_NeedsAHotkeyThatActuallyExists()
+        {
+            var c = Valid(); c.VoiceClipEnabled = true; c.VoiceClipHotkeyName = "Quick Clip";
+            Assert.Null(SettingsRules.ValidateAndTidy(c));
+        }
+
+        [Fact]
+        public void VoiceClipEnabled_WithNoMatchingHotkey_IsRefused()
+        {
+            var c = Valid(); c.VoiceClipEnabled = true; c.VoiceClipHotkeyName = "Nope";
+            Assert.Contains("Voice-activated clip", SettingsRules.ValidateAndTidy(c));
+        }
+
+        [Fact]
+        public void VoiceClipEnabled_WithNoHotkeysAtAll_IsRefused()
+        {
+            var c = new RecorderConfig { VoiceClipEnabled = true, VoiceClipHotkeyName = "Quick Clip", Hotkeys = new() };
+            Assert.Contains("Voice-activated clip", SettingsRules.ValidateAndTidy(c));
         }
 
         [Fact]
