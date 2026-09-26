@@ -413,7 +413,7 @@ test('the UI works end to end against the mock', { skip: jsdom ? false : 'jsdom 
 
   // ------------------------------------------------------------------ diagnostics
   const diagNav = () => [...doc.querySelectorAll('.nav-item')].find((b) => /Diagnostics/.test(b.textContent));
-  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.10' && /Chrono/.test(doc.querySelector('.brand').textContent));
+  check('the version is shown beside the name at the top left', doc.querySelector('.brand .version') && doc.querySelector('.brand .version').textContent === 'v1.1.11' && /Chrono/.test(doc.querySelector('.brand').textContent));
   check('Diagnostics is not in the sidebar until it is turned on', !diagNav() || diagNav().hidden);
   [...doc.querySelectorAll('.nav-item')].find((b) => /Settings/.test(b.textContent)).click();
   await until(() => doc.querySelectorAll('.settings-nav button').length > 0, 'settings');

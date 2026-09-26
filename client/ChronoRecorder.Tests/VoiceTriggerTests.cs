@@ -14,12 +14,22 @@ namespace ChronoRecorder.Tests
         }
 
         [Theory]
-        [InlineData(0.74f)]
+        [InlineData(0.89f)]
+        [InlineData(0.75f)]
         [InlineData(0.5f)]
         [InlineData(0f)]
         public void AnUnsureRecognition_DoesNotFire(float confidence)
         {
             Assert.False(VoiceTrigger.ShouldFire(confidence, Start, DateTime.MinValue));
+        }
+
+        [Fact]
+        public void TheOldThreshold_NoLongerFires()
+        {
+            // A friend saw real false triggers on ordinary speech at the old 0.75 line, so MinConfidence moved up.
+            // We don't have a confidence number for what he actually said (there was nothing logging it yet); this
+            // just pins the old value as no longer enough, now that VoiceClipListener logs every one going forward.
+            Assert.False(VoiceTrigger.ShouldFire(0.75f, Start, DateTime.MinValue));
         }
 
         [Fact]

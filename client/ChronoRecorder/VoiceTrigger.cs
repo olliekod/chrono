@@ -8,10 +8,12 @@ namespace ChronoRecorder
     /// </summary>
     public static class VoiceTrigger
     {
-        /// <summary>How sure the recognizer has to be. A constrained grammar (the one phrase it listens for, not open
-        /// dictation) is usually confident when it matches at all; this mainly guards against a stray sound or a
-        /// half-heard word being force-fit to the only phrase the engine knows.</summary>
-        public const float MinConfidence = 0.75f;
+        /// <summary>How sure the recognizer has to be. With only one phrase loaded, the engine has nothing else to
+        /// offer as an answer, so it can force-fit unrelated speech to that phrase and still report a middling
+        /// confidence: 0.75 let real false triggers through in practice, so this sits higher, at the cost of
+        /// occasionally needing the phrase said again if it goes unheard. `VoiceClipListener` logs every recognized
+        /// phrase's confidence (fired or not), so this can be tuned again from what real usage actually reports.</summary>
+        public const float MinConfidence = 0.9f;
 
         /// <summary>One save per utterance: a recognizer can report the same phrase twice for one thing said, and
         /// this is well under how long it takes to actually say "chrono, clip that" again on purpose.</summary>

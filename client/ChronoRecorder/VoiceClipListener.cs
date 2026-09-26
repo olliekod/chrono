@@ -80,7 +80,13 @@ namespace ChronoRecorder
         private void OnSpeechRecognized(object? sender, SpeechRecognizedEventArgs e)
         {
             var now = DateTime.UtcNow;
-            if (!VoiceTrigger.ShouldFire(e.Result.Confidence, now, lastTriggerUtc)) return;
+            bool fires = VoiceTrigger.ShouldFire(e.Result.Confidence, now, lastTriggerUtc);
+
+            // Logged every time, not just on a real trigger: the only way to see what the recognizer is actually
+            // matching false triggers against (it only ever reports this one phrase, since it's the only one loaded).
+            Console.WriteLine($"Voice-activated clip heard \"{e.Result.Text}\" at {e.Result.Confidence:0.00} confidence{(fires ? "" : " (ignored)")}");
+
+            if (!fires) return;
 
             lastTriggerUtc = now;
             Triggered?.Invoke();
