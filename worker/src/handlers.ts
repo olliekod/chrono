@@ -316,9 +316,25 @@ export async function serveVideo(request: Request, env: Env, id: string): Promis
     "Cross-Origin-Resource-Policy": "cross-origin",
   };
 
-  const range = parseRange(request.headers.get("Range"), size);
+  // Phones re-request ranges when the player is resized or rotated, and they decide whether the bytes still belong to
+  // the same file from the validators. Every answer (HEAD, 200 and 206) therefore carries the same ETag and
+  // Last-Modified.
+  const meta = await env.CLIPS.head(clip.object_key);
+  if (!meta) return notFound();
+  headers["ETag"] = meta.httpEtag;
+  headers["Last-Modified"] = meta.uploaded.toUTCString();
+
+  const ifNoneMatch = request.headers.get("If-None-Match");
+  if (ifNoneMatch && ifNoneMatch.split(",").some((tag) => tag.trim() === meta.httpEtag || tag.trim() === "*")) {
+    return new Response(null, { status: 304, headers });
+  }
+
+  // If-Range: only honour the range if the file is still the one the player started with, otherwise send it all.
+  const ifRange = request.headers.get("If-Range");
+  const ifRangeMatches = !ifRange || ifRange.trim() === meta.httpEtag || ifRange.trim() === headers["Last-Modified"];
+  const range = ifRangeMatches ? parseRange(request.headers.get("Range"), size) : null;
   if (range === "unsatisfiable") {
-    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}`, "Accept-Ranges": "bytes" } });
   }
 
   if (request.method === "HEAD") {
@@ -339,5 +355,5 @@ export async function serveVideo(request: Request, env: Env, id: string): Promis
     });
   }
 
-  return new Response(object.body, { headers: { ...headers, "Content-Length": String(size), ETag: object.httpEtag } });
+  return new Response(object.body, { headers: { ...headers, "Content-Length": String(size) } });
 }

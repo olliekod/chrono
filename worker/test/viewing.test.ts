@@ -108,6 +108,47 @@ describe("GET /v/:id.mp4", () => {
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(data.slice(SIZE - 10));
   });
 
+  it("sends the same ETag and Last-Modified on HEAD, 200 and 206", async () => {
+    const { id } = await uploadClip(SIZE);
+
+    const head = await api(`/v/${id}.mp4`, { method: "HEAD" });
+    const full = await api(`/v/${id}.mp4`);
+    const part = await api(`/v/${id}.mp4`, { headers: { Range: "bytes=0-9" } });
+    await full.arrayBuffer();
+    await part.arrayBuffer();
+
+    const etag = head.headers.get("etag");
+    expect(etag).toBeTruthy();
+    expect(head.headers.get("last-modified")).toBeTruthy();
+    for (const res of [full, part]) {
+      expect(res.headers.get("etag")).toBe(etag);
+      expect(res.headers.get("last-modified")).toBe(head.headers.get("last-modified"));
+    }
+  });
+
+  it("honours If-Range only when it matches the file", async () => {
+    const { id } = await uploadClip(SIZE);
+    const etag = (await api(`/v/${id}.mp4`, { method: "HEAD" })).headers.get("etag")!;
+
+    const same = await api(`/v/${id}.mp4`, { headers: { Range: "bytes=0-9", "If-Range": etag } });
+    expect(same.status).toBe(206);
+    await same.arrayBuffer();
+
+    const stale = await api(`/v/${id}.mp4`, { headers: { Range: "bytes=0-9", "If-Range": '"old"' } });
+    expect(stale.status).toBe(200);
+    expect(stale.headers.get("content-length")).toBe(String(SIZE));
+    await stale.arrayBuffer();
+  });
+
+  it("answers 304 when If-None-Match matches", async () => {
+    const { id } = await uploadClip(SIZE);
+    const etag = (await api(`/v/${id}.mp4`, { method: "HEAD" })).headers.get("etag")!;
+
+    const res = await api(`/v/${id}.mp4`, { headers: { "If-None-Match": etag } });
+
+    expect(res.status).toBe(304);
+  });
+
   it("answers 416 for a range past the end", async () => {
     const { id } = await uploadClip(SIZE);
 
