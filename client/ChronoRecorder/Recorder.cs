@@ -68,6 +68,10 @@ namespace ChronoRecorder
         private LoadGovernor? governor;
         private bool suggestedLowerFps;   // the "can't keep up at this frame rate" warning is shown once until settings change
 
+        // A window capture that stopped getting new pictures (see CaptureStarvation).
+        private CaptureStarvation? starvation;
+        private DateTime? lastStarvationUtc;
+
         // What the Diagnostics page shows about the recording in progress.
         private CaptureSource? currentSource;
         private int currentBitrateKbps;
@@ -419,6 +423,7 @@ namespace ChronoRecorder
             int startLevel = LoadPlan.StartLevel(config.EncoderLoad, CardTier, config.LearnedLoadLevel, config.Fps, LoadPlan.HasPresetStep(encoder));
             loadLevel = automatic ? Math.Max(loadLevel, startLevel) : startLevel;
             governor = automatic ? new LoadGovernor() : null;
+            starvation = source.Method == CaptureMethod.WindowCapture ? new CaptureStarvation() : null;
 
             int fps = EffectiveFps;
             int bitrate = BitrateSizing.Resolve(config.Bitrate, source.Bounds.Size, fps);
@@ -578,6 +583,12 @@ namespace ChronoRecorder
 
             latestStats = stats;
 
+            if (starvation != null && starvation.Observe(stats, started, GameInFront()))
+            {
+                HandleStarvedCapture();
+                return;
+            }
+
             var watching = governor;
             if (watching == null) return;
 
@@ -595,6 +606,31 @@ namespace ChronoRecorder
                 Note("⚠ " + text);
                 Warning?.Invoke(text);
             }
+        }
+
+        /// <summary>
+        /// The game's window has stopped delivering new pictures while the game is in front: restart the capture (which
+        /// finds the window again), and if that happened a moment ago too, record the screen while the game is in front.
+        /// </summary>
+        private void HandleStarvedCapture()
+        {
+            var now = DateTime.UtcNow;
+            var response = CaptureStarvation.Respond(lastStarvationUtc, now);
+            lastStarvationUtc = now;
+
+            if (response == StarvationResponse.UseScreenCapture)
+            {
+                windowCaptureFailed = true;
+                Note($"⚠ {TargetName}'s window stopped delivering pictures again. Using screen capture while the game is in front.");
+                Warning?.Invoke($"Chrono couldn't keep capturing {TargetName}'s window (it stopped sending pictures, which makes clips a slideshow), so it records the screen while the game is in front and pauses when it isn't.");
+            }
+            else
+            {
+                Note($"⚠ {TargetName}'s window stopped delivering new pictures (the clip would be a slideshow). Restarting the capture.");
+            }
+
+            // Like StepDownLoad: this is the thread that reads FFmpeg's output, and stopping waits on FFmpeg.
+            Task.Run(StopRecording);
         }
 
         /// <summary>This PC can't keep up: remember the next lighter step, tell the user, and let the monitor restart the recording with it.</summary>
@@ -797,6 +833,7 @@ namespace ChronoRecorder
         public void RestartRecording()
         {
             windowCaptureFailed = false;
+            lastStarvationUtc = null;
 
             // Settings changed, so what "automatic" learned about the old ones no longer applies.
             loadLevel = 0;
